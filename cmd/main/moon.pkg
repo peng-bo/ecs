@@ -1,0 +1,7 @@
+// import {
+//   "peng-bo/ecs" @lib,
+// }
+
+options(
+  "is-main": true,
+)
