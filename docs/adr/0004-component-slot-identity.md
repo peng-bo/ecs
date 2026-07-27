@@ -1,0 +1,3 @@
+# Identify components by World-local registration slots
+
+A Component ID identifies a registration slot within one World, while an unforgeable `ComponentKey[T]` binds that ID and World provenance to its typed `SparseSet[T]`; `T` describes only the payload representation. Registering the same `T` twice deliberately creates distinct IDs, pools, and Component kinds, so all data access and query construction require a Component Key, `world.get[T]` is not provided, and foreign-World keys are rejected. Slots cannot be unregistered, survive World clearing, and keep non-reused IDs until the World itself becomes unreachable; Component IDs remain transient rather than persistent identifiers.
