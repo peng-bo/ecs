@@ -42,10 +42,9 @@ pub fn World::spawn(self : World) -> Entity {
 }
 
 ///|
-/// Returns true if the Entity is alive in this World.
-/// An Entity is alive when it was spawned in this World and has not been despawned.
+/// Returns true if the Entity was spawned by this World.
+/// Cross-World validation and despawn tracking will be added when
+/// the Entity representation gains World provenance and generation counters.
 pub fn World::is_alive(self : World, entity : Entity) -> Bool {
-  // Currently, all spawned Entities remain alive since despawn is not yet implemented.
-  // Check that the entity id falls within the valid allocation range.
   entity.id < self.next_id
 }
