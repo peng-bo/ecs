@@ -16,6 +16,10 @@ pub(all) suberror ECSError {
   EntityCapacityExhausted
   /// The Component identity space is exhausted.
   ComponentCapacityExhausted
+  /// Structural mutation was attempted during query execution.
+  StructuralMutationDuringQuery
+  /// A ComponentKey from another World was used in a query.
+  ForeignComponentKey
 } derive(Debug, Eq)
 
 // --- Entity ---
@@ -35,7 +39,7 @@ pub struct Entity {
 ///|
 struct ErasedPool {
   remove_entity : (Entity) -> Unit
-  clear_all : () -> Unit
+  clear_all : () -> Unit raise ECSError
 }
 
 // --- World ---
@@ -49,6 +53,7 @@ pub struct World {
   world_id : Int
   mut next_slot_index : Int
   erased_pools : Array[ErasedPool]
+  mut query_depth : Int
 }
 
 // --- World public API ---
@@ -65,6 +70,7 @@ pub fn World::new() -> World {
     world_id: wid,
     next_slot_index: 0,
     erased_pools: [],
+    query_depth: 0,
   }
 }
 
@@ -91,6 +97,9 @@ pub fn World::is_empty(self : World) -> Bool {
 /// Raises `EntityCapacityExhausted` when the allocator cannot
 /// allocate a new slot (all generation counters exhausted).
 pub fn World::spawn(self : World) -> Entity raise ECSError {
+  if self.query_depth > 0 {
+    raise ECSError::StructuralMutationDuringQuery
+  }
   let (idx, gen) = if self.free.length() > 0 {
     // Reuse a despawned slot
     let i = self.free[self.free.length() - 1]
@@ -122,6 +131,9 @@ pub fn World::spawn(self : World) -> Entity raise ECSError {
 /// Raises `ForeignEntity` if the Entity belongs to a different World.
 /// Raises `StaleEntity` if the Entity is already dead.
 pub fn World::despawn(self : World, entity : Entity) -> Unit raise ECSError {
+  if self.query_depth > 0 {
+    raise ECSError::StructuralMutationDuringQuery
+  }
   if entity.world_id != self.world_id {
     raise ECSError::ForeignEntity
   }
@@ -153,7 +165,10 @@ pub fn World::is_alive(self : World, entity : Entity) -> Bool {
 /// registered slot. Registered Component Slots, Component IDs, and Component
 /// Keys remain valid for reuse. Every Entity issued before the clear becomes
 /// permanently stale.
-pub fn World::clear(self : World) -> Unit {
+pub fn World::clear(self : World) -> Unit raise ECSError {
+  if self.query_depth > 0 {
+    raise ECSError::StructuralMutationDuringQuery
+  }
   // Clear every registered Component Slot
   for i in 0..<self.erased_pools.length() {
     (self.erased_pools[i].clear_all)()
@@ -169,10 +184,73 @@ pub fn World::clear(self : World) -> Unit {
   self.live_count = 0
 }
 
+// --- Query Plan ---
+
+///|
+/// An immutable, reusable description of which Entities to visit.
+/// Created from a required ComponentKey and executed via `each`.
+pub struct QueryPlan {
+  world : World
+  dense_entities : Array[Entity]
+}
+
+///|
+/// Creates a QueryPlan from a required ComponentKey.
+/// Raises `ForeignComponentKey` if the key belongs to a different World.
+pub fn[T] World::query(
+  self : World,
+  key : ComponentKey[T],
+) -> QueryPlan raise ECSError {
+  if key.world.world_id != self.world_id {
+    raise ECSError::ForeignComponentKey
+  }
+  QueryPlan::{ world: self, dense_entities: key.dense_entities }
+}
+
+///|
+/// Executes the QueryPlan, calling `body` for each matching live Entity.
+/// Reusing a plan after World changes observes current storage.
+/// Raises `StructuralMutationDuringQuery` if the callback attempts mutation.
+pub fn QueryPlan::each(
+  self : QueryPlan,
+  body : (Entity) -> Unit raise ECSError,
+) -> Unit raise ECSError {
+  self.world.query_depth = self.world.query_depth + 1
+  let mut i = 0
+  let n = self.dense_entities.length()
+  while i < n {
+    let entity = self.dense_entities[i]
+    if self.world.is_alive(entity) {
+      body(entity) catch {
+        err => {
+          self.world.query_depth = self.world.query_depth - 1
+          raise err
+        }
+      }
+    }
+    i = i + 1
+  }
+  self.world.query_depth = self.world.query_depth - 1
+}
+
+// --- Structural mutation guard ---
+
+///|
+fn[T] ComponentKey::check_no_query(
+  self : ComponentKey[T],
+) -> Unit raise ECSError {
+  if self.world.query_depth > 0 {
+    raise ECSError::StructuralMutationDuringQuery
+  }
+}
+
 ///|
 /// Registers a new Component Slot for payload type `T` and returns a typed
 /// ComponentKey that provides access to the slot.
 pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
+  if self.query_depth > 0 {
+    raise ECSError::StructuralMutationDuringQuery
+  }
   let slot = self.next_slot_index
   let next = slot + 1
   if next < slot {
@@ -194,7 +272,7 @@ pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
         ignore(key.remove_entity(e))
       }
     },
-    clear_all: fn() -> Unit { key.clear() },
+    clear_all: fn() -> Unit raise ECSError { key.clear() },
   }
   self.erased_pools.push(pool)
   key
@@ -348,6 +426,7 @@ pub fn[T] ComponentKey::set(
   entity : Entity,
   value : T,
 ) -> T? raise ECSError {
+  self.check_no_query()
   self.validate_entity(entity)
   self.grow_sparse(entity.index)
   let dense_idx = self.sparse[entity.index]
@@ -373,6 +452,7 @@ pub fn[T] ComponentKey::remove(
   self : ComponentKey[T],
   entity : Entity,
 ) -> T? raise ECSError {
+  self.check_no_query()
   self.validate_entity(entity)
   let dense_idx = self.sparse_lookup(entity)
   if dense_idx < 0 {
@@ -399,7 +479,8 @@ pub fn[T] ComponentKey::remove(
 ///|
 /// Clears every Component from this slot without despawning any Entity.
 /// After clear, the slot is empty and its length reports zero.
-pub fn[T] ComponentKey::clear(self : ComponentKey[T]) -> Unit {
+pub fn[T] ComponentKey::clear(self : ComponentKey[T]) -> Unit raise ECSError {
+  self.check_no_query()
   for i in 0..<self.dense_entities.length() {
     self.sparse[self.dense_entities[i].index] = -1
   }

@@ -13,6 +13,8 @@ pub(all) suberror ECSError {
   ForeignEntity
   EntityCapacityExhausted
   ComponentCapacityExhausted
+  StructuralMutationDuringQuery
+  ForeignComponentKey
 } derive(Eq, @debug.Debug)
 
 // Types and methods
@@ -28,7 +30,7 @@ pub struct ComponentKey[T] {
   dense_entities : Array[Entity]
   dense_payloads : Array[T]
 }
-pub fn[T] ComponentKey::clear(Self[T]) -> Unit
+pub fn[T] ComponentKey::clear(Self[T]) -> Unit raise ECSError
 pub fn[T] ComponentKey::contains(Self[T], Entity) -> Bool raise ECSError
 pub fn[T] ComponentKey::get(Self[T], Entity) -> T? raise ECSError
 pub fn[T] ComponentKey::id(Self[T]) -> ComponentID
@@ -45,6 +47,12 @@ pub struct Entity {
 
 type ErasedPool
 
+pub struct QueryPlan {
+  world : World
+  dense_entities : Array[Entity]
+}
+pub fn QueryPlan::each(Self, (Entity) -> Unit raise ECSError) -> Unit raise ECSError
+
 pub struct World {
   gens : Array[Int]
   free : Array[Int]
@@ -52,13 +60,15 @@ pub struct World {
   world_id : Int
   mut next_slot_index : Int
   erased_pools : Array[ErasedPool]
+  mut query_depth : Int
 }
-pub fn World::clear(Self) -> Unit
+pub fn World::clear(Self) -> Unit raise ECSError
 pub fn World::despawn(Self, Entity) -> Unit raise ECSError
 pub fn World::is_alive(Self, Entity) -> Bool
 pub fn World::is_empty(Self) -> Bool
 pub fn World::len(Self) -> Int
 pub fn World::new() -> Self
+pub fn[T] World::query(Self, ComponentKey[T]) -> QueryPlan raise ECSError
 pub fn[T] World::register(Self) -> ComponentKey[T] raise ECSError
 pub fn World::spawn(Self) -> Entity raise ECSError
 
