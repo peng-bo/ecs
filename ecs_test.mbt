@@ -439,3 +439,62 @@ test "despawn leaves other entities' components untouched" {
     _ => fail("expected StaleEntity")
   }
 }
+
+// --- #8: Clear a World without invalidating Component Keys ---
+
+///|
+test "clear empty World stays empty" {
+  let w = @ecs.World::new()
+  @ecs.World::clear(w)
+  inspect(@ecs.World::len(w), content="0")
+  inspect(@ecs.World::is_empty(w), content="true")
+}
+
+///|
+test "clear removes all entities and components" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let e2 = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e1, 10))
+  ignore(@ecs.ComponentKey::set(k, e2, 20))
+  @ecs.World::clear(w)
+  inspect(@ecs.World::len(w), content="0")
+  inspect(@ecs.ComponentKey::len(k), content="0")
+  inspect(@ecs.World::is_alive(w, e1), content="false")
+  inspect(@ecs.World::is_alive(w, e2), content="false")
+}
+
+///|
+test "after clear existing keys remain valid for reuse" {
+  let w = @ecs.World::new()
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let e = @ecs.World::spawn(w)
+  ignore(@ecs.ComponentKey::set(k, e, 42))
+  @ecs.World::clear(w)
+  let e2 = @ecs.World::spawn(w)
+  ignore(@ecs.ComponentKey::set(k, e2, 99))
+  inspect(@ecs.ComponentKey::get(k, e2), content="Some(99)")
+  inspect(@ecs.ComponentKey::len(k), content="1")
+}
+
+///|
+test "clear preserves ComponentID identity" {
+  let w = @ecs.World::new()
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let id_before = @ecs.ComponentKey::id(k)
+  @ecs.World::clear(w)
+  let id_after = @ecs.ComponentKey::id(k)
+  inspect(id_before == id_after, content="true")
+}
+
+///|
+test "clear resets entity allocator for fresh spawns" {
+  let w = @ecs.World::new()
+  ignore(@ecs.World::spawn(w))
+  ignore(@ecs.World::spawn(w))
+  @ecs.World::clear(w)
+  let e = @ecs.World::spawn(w)
+  inspect(@ecs.World::len(w), content="1")
+  inspect(@ecs.World::is_alive(w, e), content="true")
+}
