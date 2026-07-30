@@ -498,3 +498,108 @@ test "clear resets entity allocator for fresh spawns" {
   inspect(@ecs.World::len(w), content="1")
   inspect(@ecs.World::is_alive(w, e), content="true")
 }
+
+// --- #9: Execute a guarded single-Slot Query Plan ---
+
+///|
+test "query visits all entities with matching component" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let e2 = @ecs.World::spawn(w)
+  let e3 = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e1, 1))
+  ignore(@ecs.ComponentKey::set(k, e2, 2))
+  // e3 has no component — should not appear in query
+  let plan = @ecs.World::query(w, k)
+  let mut count = 0
+  @ecs.QueryPlan::each(plan, fn(e : @ecs.Entity) -> Unit raise ECSError {
+    count = count + 1
+  })
+  inspect(count, content="2")
+}
+
+///|
+test "query with no matching entities runs body zero times" {
+  let w = @ecs.World::new()
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let plan = @ecs.World::query(w, k)
+  let mut ran = false
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { ran = true })
+  inspect(ran, content="false")
+}
+
+///|
+test "query plan is reusable after World changes" {
+  let w = @ecs.World::new()
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let plan = @ecs.World::query(w, k)
+  let e1 = @ecs.World::spawn(w)
+  ignore(@ecs.ComponentKey::set(k, e1, 10))
+  let mut c1 = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { c1 = c1 + 1 })
+  inspect(c1, content="1")
+  // Add another entity and reuse plan
+  let e2 = @ecs.World::spawn(w)
+  ignore(@ecs.ComponentKey::set(k, e2, 20))
+  let mut c2 = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  inspect(c2, content="2")
+}
+
+///|
+test "foreign ComponentKey raises ForeignComponentKey on query creation" {
+  let w1 = @ecs.World::new()
+  let w2 = @ecs.World::new()
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w1)
+  try @ecs.World::query(w2, k) catch {
+    ECSError::ForeignComponentKey =>
+      inspect("foreign key", content="foreign key")
+    _ => fail("expected ForeignComponentKey")
+  } noraise {
+    _ => fail("expected ForeignComponentKey")
+  }
+}
+
+///|
+test "callback error propagates and allows later operations" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 42))
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      raise ECSError::StaleEntity
+    })
+  catch {
+    ECSError::StaleEntity => inspect("propagated", content="propagated")
+    _ => fail("expected StaleEntity")
+  } noraise {
+    _ => fail("expected error")
+  }
+  // After error, operations still work
+  ignore(@ecs.ComponentKey::set(k, e, 99))
+  inspect(@ecs.ComponentKey::get(k, e), content="Some(99)")
+}
+
+///|
+test "structural mutation during query raises StructuralMutationDuringQuery" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 1))
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      // Attempting to despawn during query should fail
+      @ecs.World::despawn(w, e)
+    })
+  catch {
+    ECSError::StructuralMutationDuringQuery =>
+      inspect("blocked", content="blocked")
+    _ => fail("expected StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StructuralMutationDuringQuery")
+  }
+}
