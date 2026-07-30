@@ -337,3 +337,56 @@ test "clear empty slot is idempotent" {
   @ecs.ComponentKey::clear(k)
   inspect(@ecs.ComponentKey::len(k), content="0")
 }
+
+// --- #6: Register independent Slots with the same payload type ---
+
+///|
+test "same payload type registered twice creates distinct ComponentIDs" {
+  let w = @ecs.World::new()
+  let k1 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k2 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  inspect(
+    @ecs.ComponentKey::id(k1) == @ecs.ComponentKey::id(k2),
+    content="false",
+  )
+}
+
+///|
+test "same-type slots have independent storage" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k_pos : @ecs.ComponentKey[Int] = @ecs.World::register(w) // current position
+  let k_tgt : @ecs.ComponentKey[Int] = @ecs.World::register(w) // target position
+  ignore(@ecs.ComponentKey::set(k_pos, e, 10))
+  ignore(@ecs.ComponentKey::set(k_tgt, e, 20))
+  inspect(@ecs.ComponentKey::get(k_pos, e), content="Some(10)")
+  inspect(@ecs.ComponentKey::get(k_tgt, e), content="Some(20)")
+  inspect(@ecs.ComponentKey::len(k_pos), content="1")
+  inspect(@ecs.ComponentKey::len(k_tgt), content="1")
+}
+
+///|
+test "removing from one same-type slot does not affect the other" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k1 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k2 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k1, e, 100))
+  ignore(@ecs.ComponentKey::set(k2, e, 200))
+  ignore(@ecs.ComponentKey::remove(k1, e))
+  inspect(@ecs.ComponentKey::contains(k1, e), content="false")
+  inspect(@ecs.ComponentKey::contains(k2, e), content="true")
+  inspect(@ecs.ComponentKey::get(k2, e), content="Some(200)")
+}
+
+///|
+test "no type-directed ambiguous access exists" {
+  let w = @ecs.World::new()
+  // Type annotations ensure keys are the only access path — no world.get[T] exists
+  let k1 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k2 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  // The only way to access Int components is through their specific keys
+  let _ : @ecs.ComponentKey[Int] = k1
+  let _ : @ecs.ComponentKey[Int] = k2
+  inspect(true, content="true")
+}

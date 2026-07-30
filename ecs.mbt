@@ -14,6 +14,8 @@ pub(all) suberror ECSError {
   ForeignEntity
   /// The Entity allocator has no more capacity.
   EntityCapacityExhausted
+  /// The Component identity space is exhausted.
+  ComponentCapacityExhausted
 } derive(Debug, Eq)
 
 // --- Entity ---
@@ -129,9 +131,13 @@ pub fn World::is_alive(self : World, entity : Entity) -> Bool {
 ///|
 /// Registers a new Component Slot for payload type `T` and returns a typed
 /// ComponentKey that provides access to the slot.
-pub fn[T] World::register(self : World) -> ComponentKey[T] {
+pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
   let slot = self.next_slot_index
-  self.next_slot_index = self.next_slot_index + 1
+  let next = slot + 1
+  if next < slot {
+    raise ECSError::ComponentCapacityExhausted
+  }
+  self.next_slot_index = next
   let id = ComponentID::{ world_id: self.world_id, slot_index: slot }
   ComponentKey::{
     id,
