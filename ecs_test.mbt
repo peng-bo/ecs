@@ -390,3 +390,52 @@ test "no type-directed ambiguous access exists" {
   let _ : @ecs.ComponentKey[Int] = k2
   inspect(true, content="true")
 }
+
+// --- #7: Clean every registered Component Slot on despawn ---
+
+///|
+test "despawn removes entity from all registered slots" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k1 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k2 : @ecs.ComponentKey[String] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k1, e, 42))
+  ignore(@ecs.ComponentKey::set(k2, e, "hello"))
+  @ecs.World::despawn(w, e)
+  inspect(@ecs.ComponentKey::len(k1), content="0")
+  inspect(@ecs.ComponentKey::len(k2), content="0")
+}
+
+///|
+test "despawn removes entity from same-type slots independently" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k_pos : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_tgt : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k_pos, e, 10))
+  ignore(@ecs.ComponentKey::set(k_tgt, e, 20))
+  @ecs.World::despawn(w, e)
+  inspect(@ecs.ComponentKey::len(k_pos), content="0")
+  inspect(@ecs.ComponentKey::len(k_tgt), content="0")
+}
+
+///|
+test "despawn leaves other entities' components untouched" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let e2 = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e1, 100))
+  ignore(@ecs.ComponentKey::set(k, e2, 200))
+  @ecs.World::despawn(w, e1)
+  inspect(@ecs.ComponentKey::len(k), content="1")
+  inspect(@ecs.ComponentKey::get(k, e2), content="Some(200)")
+  // e1 is stale — contains raises StaleEntity (spec: consistent error semantics)
+  try @ecs.ComponentKey::contains(k, e1) catch {
+    ECSError::StaleEntity =>
+      inspect("stale after despawn", content="stale after despawn")
+    _ => fail("expected StaleEntity")
+  } noraise {
+    _ => fail("expected StaleEntity")
+  }
+}

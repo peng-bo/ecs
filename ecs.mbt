@@ -30,6 +30,13 @@ pub struct Entity {
   world_id : Int
 } derive(Debug, Eq, Hash)
 
+// --- Erased pool (private, type-erased lifecycle operations) ---
+
+///|
+struct ErasedPool {
+  remove_entity : (Entity) -> Unit
+}
+
 // --- World ---
 
 ///|
@@ -40,6 +47,7 @@ pub struct World {
   mut live_count : Int
   world_id : Int
   mut next_slot_index : Int
+  erased_pools : Array[ErasedPool]
 }
 
 // --- World public API ---
@@ -49,7 +57,14 @@ pub struct World {
 pub fn World::new() -> World {
   let wid = next_world_id.val
   next_world_id.val = next_world_id.val + 1
-  { gens: [], free: [], live_count: 0, world_id: wid, next_slot_index: 0 }
+  {
+    gens: [],
+    free: [],
+    live_count: 0,
+    world_id: wid,
+    next_slot_index: 0,
+    erased_pools: [],
+  }
 }
 
 ///|
@@ -113,6 +128,10 @@ pub fn World::despawn(self : World, entity : Entity) -> Unit raise ECSError {
     self.gens[entity.index] != entity.generation {
     raise ECSError::StaleEntity
   }
+  // Remove entity from every registered Component Slot
+  for i in 0..<self.erased_pools.length() {
+    (self.erased_pools[i].remove_entity)(entity)
+  }
   // Increment generation to invalidate the stale handle
   self.gens[entity.index] = self.gens[entity.index] + 1
   self.free.push(entity.index)
@@ -139,13 +158,57 @@ pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
   }
   self.next_slot_index = next
   let id = ComponentID::{ world_id: self.world_id, slot_index: slot }
-  ComponentKey::{
+  let key = ComponentKey::{
     id,
     world: self,
     sparse: [],
     dense_entities: [],
     dense_payloads: [],
   }
+  // Register an erased pool so despawn can clean this slot
+  let pool = ErasedPool::{
+    remove_entity: fn(e : Entity) -> Unit {
+      if key.contains_entity(e) {
+        ignore(key.remove_entity(e))
+      }
+    },
+  }
+  self.erased_pools.push(pool)
+  key
+}
+
+// --- Private: erased entity operations (used by closures above) ---
+
+///|
+fn[T] ComponentKey::remove_entity(
+  self : ComponentKey[T],
+  entity : Entity,
+) -> T? {
+  let dense_idx = self.sparse_lookup(entity)
+  if dense_idx < 0 {
+    None
+  } else {
+    let last_idx = self.dense_entities.length() - 1
+    let removed = self.dense_payloads[dense_idx]
+    if dense_idx != last_idx {
+      let last_entity = self.dense_entities[last_idx]
+      self.dense_entities[dense_idx] = last_entity
+      self.dense_payloads[dense_idx] = self.dense_payloads[last_idx]
+      self.sparse[last_entity.index] = dense_idx
+    }
+    ignore(self.dense_entities.remove(last_idx))
+    ignore(self.dense_payloads.remove(last_idx))
+    self.sparse[entity.index] = -1
+    Some(removed)
+  }
+}
+
+///|
+fn[T] ComponentKey::contains_entity(
+  self : ComponentKey[T],
+  entity : Entity,
+) -> Bool {
+  self.sparse_lookup(entity) >= 0
 }
 
 // --- Component ID ---
