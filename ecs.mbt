@@ -37,6 +37,7 @@ pub struct World {
   free : Array[Int]
   mut live_count : Int
   world_id : Int
+  mut next_slot_index : Int
 }
 
 // --- World public API ---
@@ -46,7 +47,7 @@ pub struct World {
 pub fn World::new() -> World {
   let wid = next_world_id.val
   next_world_id.val = next_world_id.val + 1
-  { gens: [], free: [], live_count: 0, world_id: wid }
+  { gens: [], free: [], live_count: 0, world_id: wid, next_slot_index: 0 }
 }
 
 ///|
@@ -123,4 +124,150 @@ pub fn World::is_alive(self : World, entity : Entity) -> Bool {
   entity.world_id == self.world_id &&
   entity.index < self.gens.length() &&
   self.gens[entity.index] == entity.generation
+}
+
+///|
+/// Registers a new Component Slot for payload type `T` and returns a typed
+/// ComponentKey that provides access to the slot.
+pub fn[T] World::register(self : World) -> ComponentKey[T] {
+  let slot = self.next_slot_index
+  self.next_slot_index = self.next_slot_index + 1
+  let id = ComponentID::{ world_id: self.world_id, slot_index: slot }
+  ComponentKey::{
+    id,
+    world: self,
+    sparse: [],
+    dense_entities: [],
+    dense_payloads: [],
+  }
+}
+
+// --- Component ID ---
+
+///|
+/// An opaque, World-local identity for a registered Component Slot.
+/// Supports equality and debug output.
+pub struct ComponentID {
+  world_id : Int
+  slot_index : Int
+} derive(Debug, Eq)
+
+// --- Component Key ---
+
+///|
+/// An unforgeable typed handle for one Component Slot in one World.
+/// Provides set, get, contains, len, and is_empty operations on that slot.
+pub struct ComponentKey[T] {
+  id : ComponentID
+  world : World
+  sparse : Array[Int]
+  dense_entities : Array[Entity]
+  dense_payloads : Array[T]
+}
+
+///|
+/// Returns the ComponentID of this slot.
+pub fn[T] ComponentKey::id(self : ComponentKey[T]) -> ComponentID {
+  self.id
+}
+
+///|
+/// Returns the number of Entities that have a Component in this slot.
+pub fn[T] ComponentKey::len(self : ComponentKey[T]) -> Int {
+  self.dense_entities.length()
+}
+
+///|
+/// Returns true if no Entity has a Component in this slot.
+pub fn[T] ComponentKey::is_empty(self : ComponentKey[T]) -> Bool {
+  self.dense_entities.length() == 0
+}
+
+// --- Private helpers (must be defined before use) ---
+
+///|
+fn[T] ComponentKey::validate_entity(
+  self : ComponentKey[T],
+  entity : Entity,
+) -> Unit raise ECSError {
+  if entity.world_id != self.world.world_id {
+    raise ECSError::ForeignEntity
+  }
+  if entity.index >= self.world.gens.length() ||
+    self.world.gens[entity.index] != entity.generation {
+    raise ECSError::StaleEntity
+  }
+}
+
+///|
+fn[T] ComponentKey::grow_sparse(self : ComponentKey[T], index : Int) -> Unit {
+  while self.sparse.length() <= index {
+    self.sparse.push(-1)
+  }
+}
+
+///|
+fn[T] ComponentKey::sparse_lookup(
+  self : ComponentKey[T],
+  entity : Entity,
+) -> Int {
+  if entity.index < self.sparse.length() {
+    self.sparse[entity.index]
+  } else {
+    -1
+  }
+}
+
+// --- ComponentKey public operations ---
+
+///|
+/// Returns true if the Entity has a Component in this slot.
+/// Raises `StaleEntity` or `ForeignEntity` for invalid Entities.
+pub fn[T] ComponentKey::contains(
+  self : ComponentKey[T],
+  entity : Entity,
+) -> Bool raise ECSError {
+  self.validate_entity(entity)
+  self.sparse_lookup(entity) >= 0
+}
+
+///|
+/// Returns the Component value for the Entity, or `None` if absent.
+/// Raises `StaleEntity` or `ForeignEntity` for invalid Entities.
+pub fn[T] ComponentKey::get(
+  self : ComponentKey[T],
+  entity : Entity,
+) -> T? raise ECSError {
+  self.validate_entity(entity)
+  let dense_idx = self.sparse_lookup(entity)
+  if dense_idx >= 0 {
+    Some(self.dense_payloads[dense_idx])
+  } else {
+    None
+  }
+}
+
+///|
+/// Sets the Component value for the Entity.
+/// Returns `None` on first insertion; returns `Some(previous)` on replacement.
+/// Raises `StaleEntity` or `ForeignEntity` for invalid Entities.
+pub fn[T] ComponentKey::set(
+  self : ComponentKey[T],
+  entity : Entity,
+  value : T,
+) -> T? raise ECSError {
+  self.validate_entity(entity)
+  self.grow_sparse(entity.index)
+  let dense_idx = self.sparse[entity.index]
+  if dense_idx >= 0 {
+    let old = self.dense_payloads[dense_idx]
+    self.dense_payloads[dense_idx] = value
+    Some(old)
+  } else {
+    let new_idx = self.dense_entities.length()
+    self.sparse[entity.index] = new_idx
+    self.dense_entities.push(entity)
+    self.dense_payloads.push(value)
+    None
+  }
 }
