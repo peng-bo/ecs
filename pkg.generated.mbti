@@ -32,7 +32,7 @@ pub fn World::is_alive(Self, Entity) -> Bool
 pub fn World::is_empty(Self) -> Bool
 pub fn World::len(Self) -> Int
 pub fn World::new() -> Self
-pub fn World::spawn(Self) -> Entity
+pub fn World::spawn(Self) -> Entity raise ECSError
 
 // Type aliases
 

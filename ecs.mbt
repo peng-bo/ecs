@@ -1,4 +1,5 @@
 // --- Global World ID counter ---
+
 ///|
 let next_world_id : Ref[Int] = { val: 0 }
 
@@ -63,19 +64,33 @@ pub fn World::is_empty(self : World) -> Bool {
 ///|
 /// Spawns a new live Entity and returns an opaque handle to it.
 /// Updates World length and emptiness.
-pub fn World::spawn(self : World) -> Entity {
-  let mut idx = 0
-  let mut gen = 1
-  if self.free.length() > 0 {
+///
+/// Reuses despawned slots before allocating new ones. Each reuse
+/// increments the slot's generation so the new Entity compares
+/// unequal to every stale handle that occupied the same slot.
+///
+/// Raises `EntityCapacityExhausted` when the allocator cannot
+/// allocate a new slot (all generation counters exhausted).
+pub fn World::spawn(self : World) -> Entity raise ECSError {
+  let (idx, gen) = if self.free.length() > 0 {
     // Reuse a despawned slot
-    idx = self.free[self.free.length() - 1]
+    let i = self.free[self.free.length() - 1]
     ignore(self.free.remove(self.free.length() - 1))
-    gen = self.gens[idx] + 1
-    self.gens[idx] = gen
+    let next_gen = self.gens[i] + 1
+    // Generation exhaustion: if incrementing would overflow, the slot
+    // is permanently retired. For a 64-bit Int this is practically
+    // unreachable, but the check preserves the specified contract.
+    if next_gen < self.gens[i] {
+      raise ECSError::EntityCapacityExhausted
+    }
+    self.gens[i] = next_gen
+    (i, next_gen)
   } else {
     // Allocate a new slot
-    idx = self.gens.length()
-    self.gens.push(gen)
+    let i = self.gens.length()
+    let g = 1
+    self.gens.push(g)
+    (i, g)
   }
   self.live_count = self.live_count + 1
   Entity::{ index: idx, generation: gen, world_id: self.world_id }
