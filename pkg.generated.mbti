@@ -43,12 +43,15 @@ pub struct Entity {
   world_id : Int
 } derive(Eq, Hash, @debug.Debug)
 
+type ErasedPool
+
 pub struct World {
   gens : Array[Int]
   free : Array[Int]
   mut live_count : Int
   world_id : Int
   mut next_slot_index : Int
+  erased_pools : Array[ErasedPool]
 }
 pub fn World::despawn(Self, Entity) -> Unit raise ECSError
 pub fn World::is_alive(Self, Entity) -> Bool
