@@ -35,6 +35,7 @@ pub struct Entity {
 ///|
 struct ErasedPool {
   remove_entity : (Entity) -> Unit
+  clear_all : () -> Unit
 }
 
 // --- World ---
@@ -148,6 +149,27 @@ pub fn World::is_alive(self : World, entity : Entity) -> Bool {
 }
 
 ///|
+/// Clears the World: removes all Entities and Component values from every
+/// registered slot. Registered Component Slots, Component IDs, and Component
+/// Keys remain valid for reuse. Every Entity issued before the clear becomes
+/// permanently stale.
+pub fn World::clear(self : World) -> Unit {
+  // Clear every registered Component Slot
+  for i in 0..<self.erased_pools.length() {
+    (self.erased_pools[i].clear_all)()
+  }
+  // Invalidate all entity slots by advancing their generations
+  for i in 0..<self.gens.length() {
+    self.gens[i] = self.gens[i] + 1
+  }
+  // Reset allocator state
+  while self.free.length() > 0 {
+    ignore(self.free.remove(self.free.length() - 1))
+  }
+  self.live_count = 0
+}
+
+///|
 /// Registers a new Component Slot for payload type `T` and returns a typed
 /// ComponentKey that provides access to the slot.
 pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
@@ -165,13 +187,14 @@ pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
     dense_entities: [],
     dense_payloads: [],
   }
-  // Register an erased pool so despawn can clean this slot
+  // Register an erased pool so despawn/clear can clean this slot
   let pool = ErasedPool::{
     remove_entity: fn(e : Entity) -> Unit {
       if key.contains_entity(e) {
         ignore(key.remove_entity(e))
       }
     },
+    clear_all: fn() -> Unit { key.clear() },
   }
   self.erased_pools.push(pool)
   key

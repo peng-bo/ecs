@@ -53,6 +53,7 @@ pub struct World {
   mut next_slot_index : Int
   erased_pools : Array[ErasedPool]
 }
+pub fn World::clear(Self) -> Unit
 pub fn World::despawn(Self, Entity) -> Unit raise ECSError
 pub fn World::is_alive(Self, Entity) -> Bool
 pub fn World::is_empty(Self) -> Bool
