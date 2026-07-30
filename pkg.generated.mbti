@@ -8,16 +8,26 @@ import {
 // Values
 
 // Errors
+pub(all) suberror ECSError {
+  StaleEntity
+  ForeignEntity
+  EntityCapacityExhausted
+} derive(Eq, @debug.Debug)
 
 // Types and methods
 pub struct Entity {
-  id : Int
+  index : Int
+  generation : Int
+  world_id : Int
 } derive(Eq, Hash, @debug.Debug)
 
 pub struct World {
-  mut next_id : Int
+  gens : Array[Int]
+  free : Array[Int]
   mut live_count : Int
+  world_id : Int
 }
+pub fn World::despawn(Self, Entity) -> Unit raise ECSError
 pub fn World::is_alive(Self, Entity) -> Bool
 pub fn World::is_empty(Self) -> Bool
 pub fn World::len(Self) -> Int
