@@ -49,8 +49,10 @@ type ErasedPool
 
 pub struct QueryPlan {
   world : World
-  dense_entities : Array[Entity]
+  drivers : Array[Array[Entity]]
+  checks : Array[(Entity) -> Bool]
 }
+pub fn[T] QueryPlan::add_required(Self, ComponentKey[T]) -> Self raise ECSError
 pub fn QueryPlan::each(Self, (Entity) -> Unit raise ECSError) -> Unit raise ECSError
 
 pub struct World {

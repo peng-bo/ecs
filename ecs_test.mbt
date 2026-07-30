@@ -603,3 +603,92 @@ test "structural mutation during query raises StructuralMutationDuringQuery" {
     _ => fail("expected StructuralMutationDuringQuery")
   }
 }
+
+// --- #10: Compose required Slots and select the smallest driver ---
+
+///|
+test "add_required returns new immutable plan" {
+  let w = @ecs.World::new()
+  let k1 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k2 : @ecs.ComponentKey[String] = @ecs.World::register(w)
+  let plan1 = @ecs.World::query(w, k1)
+  let plan2 = @ecs.QueryPlan::add_required(plan1, k2)
+  // plan1 and plan2 are different objects (immutability verified by type system)
+  let mut c1 = 0
+  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit raise ECSError { c1 = c1 + 1 })
+  let mut c2 = 0
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  inspect(c1, content="0")
+  inspect(c2, content="0")
+}
+
+///|
+test "multi-required query matches entities with all components" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let e2 = @ecs.World::spawn(w)
+  let e3 = @ecs.World::spawn(w)
+  let k_i : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_s : @ecs.ComponentKey[String] = @ecs.World::register(w)
+  // e1: both, e2: Int only, e3: neither
+  ignore(@ecs.ComponentKey::set(k_i, e1, 1))
+  ignore(@ecs.ComponentKey::set(k_s, e1, "a"))
+  ignore(@ecs.ComponentKey::set(k_i, e2, 2))
+  let plan = @ecs.World::query(w, k_i)
+  let plan = @ecs.QueryPlan::add_required(plan, k_s)
+  let mut count = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { count = count + 1 })
+  inspect(count, content="1")
+}
+
+///|
+test "add_required with same key is idempotent" {
+  let w = @ecs.World::new()
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let e = @ecs.World::spawn(w)
+  ignore(@ecs.ComponentKey::set(k, e, 1))
+  let plan1 = @ecs.World::query(w, k)
+  let plan2 = @ecs.QueryPlan::add_required(plan1, k)
+  let mut c1 = 0
+  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit raise ECSError { c1 = c1 + 1 })
+  let mut c2 = 0
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  inspect(c1, content="1")
+  inspect(c2, content="1")
+}
+
+///|
+test "foreign ComponentKey rejected on add_required" {
+  let w1 = @ecs.World::new()
+  let w2 = @ecs.World::new()
+  let k1 : @ecs.ComponentKey[Int] = @ecs.World::register(w1)
+  let k2 : @ecs.ComponentKey[Int] = @ecs.World::register(w2)
+  let plan = @ecs.World::query(w1, k1)
+  try @ecs.QueryPlan::add_required(plan, k2) catch {
+    ECSError::ForeignComponentKey => inspect("foreign", content="foreign")
+    _ => fail("expected ForeignComponentKey")
+  } noraise {
+    _ => fail("expected ForeignComponentKey")
+  }
+}
+
+///|
+test "smallest pool chosen as driver" {
+  let w = @ecs.World::new()
+  let k_a : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_b : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  // Populate k_a with many entities, k_b with just one
+  for _ in 0..<5 {
+    let e = @ecs.World::spawn(w)
+    ignore(@ecs.ComponentKey::set(k_a, e, 1))
+  }
+  let e_small = @ecs.World::spawn(w)
+  ignore(@ecs.ComponentKey::set(k_a, e_small, 1))
+  ignore(@ecs.ComponentKey::set(k_b, e_small, 2))
+  let plan = @ecs.World::query(w, k_a)
+  let plan = @ecs.QueryPlan::add_required(plan, k_b)
+  let mut count = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { count = count + 1 })
+  // Only e_small has both components
+  inspect(count, content="1")
+}

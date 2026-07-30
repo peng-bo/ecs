@@ -40,6 +40,7 @@ pub struct Entity {
 struct ErasedPool {
   remove_entity : (Entity) -> Unit
   clear_all : () -> Unit raise ECSError
+  contains_entity : (Entity) -> Bool
 }
 
 // --- World ---
@@ -188,10 +189,11 @@ pub fn World::clear(self : World) -> Unit raise ECSError {
 
 ///|
 /// An immutable, reusable description of which Entities to visit.
-/// Created from a required ComponentKey and executed via `each`.
+/// Created from one or more required ComponentKeys and executed via `each`.
 pub struct QueryPlan {
   world : World
-  dense_entities : Array[Entity]
+  drivers : Array[Array[Entity]]
+  checks : Array[(Entity) -> Bool]
 }
 
 ///|
@@ -204,23 +206,72 @@ pub fn[T] World::query(
   if key.world.world_id != self.world_id {
     raise ECSError::ForeignComponentKey
   }
-  QueryPlan::{ world: self, dense_entities: key.dense_entities }
+  let drivers : Array[Array[Entity]] = [key.dense_entities]
+  let checks : Array[(Entity) -> Bool] = []
+  QueryPlan::{ world: self, drivers, checks }
+}
+
+///|
+/// Returns a new QueryPlan with an additional required ComponentKey.
+/// The source plan remains unchanged. Adding the same key is idempotent.
+/// Raises `ForeignComponentKey` if the key belongs to a different World.
+pub fn[T] QueryPlan::add_required(
+  self : QueryPlan,
+  key : ComponentKey[T],
+) -> QueryPlan raise ECSError {
+  if key.world.world_id != self.world.world_id {
+    raise ECSError::ForeignComponentKey
+  }
+  // Idempotency: same dense array already present
+  let mut duplicate = false
+  for i in 0..<self.drivers.length() {
+    if self.drivers[i] == key.dense_entities {
+      duplicate = true
+    }
+  }
+  if duplicate {
+    self
+  } else {
+    let new_drivers : Array[Array[Entity]] = []
+    for i in 0..<self.drivers.length() {
+      new_drivers.push(self.drivers[i])
+    }
+    new_drivers.push(key.dense_entities)
+    let new_checks : Array[(Entity) -> Bool] = []
+    for i in 0..<self.checks.length() {
+      new_checks.push(self.checks[i])
+    }
+    let pool = key.world.erased_pools[key.id.slot_index]
+    new_checks.push(pool.contains_entity)
+    QueryPlan::{ world: self.world, drivers: new_drivers, checks: new_checks }
+  }
 }
 
 ///|
 /// Executes the QueryPlan, calling `body` for each matching live Entity.
-/// Reusing a plan after World changes observes current storage.
+/// The smallest required pool is chosen as the driver on each execution.
 /// Raises `StructuralMutationDuringQuery` if the callback attempts mutation.
 pub fn QueryPlan::each(
   self : QueryPlan,
   body : (Entity) -> Unit raise ECSError,
 ) -> Unit raise ECSError {
   self.world.query_depth = self.world.query_depth + 1
+  let driver = if self.drivers.length() == 0 {
+    []
+  } else {
+    let mut best = self.drivers[0]
+    for i in 1..<self.drivers.length() {
+      if self.drivers[i].length() < best.length() {
+        best = self.drivers[i]
+      }
+    }
+    best
+  }
   let mut i = 0
-  let n = self.dense_entities.length()
+  let n = driver.length()
   while i < n {
-    let entity = self.dense_entities[i]
-    if self.world.is_alive(entity) {
+    let entity = driver[i]
+    if self.world.is_alive(entity) && self.matches_all(entity) {
       body(entity) catch {
         err => {
           self.world.query_depth = self.world.query_depth - 1
@@ -231,6 +282,21 @@ pub fn QueryPlan::each(
     i = i + 1
   }
   self.world.query_depth = self.world.query_depth - 1
+}
+
+///|
+fn QueryPlan::matches_all(self : QueryPlan, entity : Entity) -> Bool {
+  let mut ok = true
+  let mut j = 0
+  while j < self.checks.length() {
+    if !self.checks[j](entity) {
+      ok = false
+      j = self.checks.length()
+    } else {
+      j = j + 1
+    }
+  }
+  ok
 }
 
 // --- Structural mutation guard ---
@@ -273,6 +339,7 @@ pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
       }
     },
     clear_all: fn() -> Unit raise ECSError { key.clear() },
+    contains_entity: fn(e : Entity) -> Bool { key.contains_entity(e) },
   }
   self.erased_pools.push(pool)
   key
