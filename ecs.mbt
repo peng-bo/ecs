@@ -271,3 +271,48 @@ pub fn[T] ComponentKey::set(
     None
   }
 }
+
+///|
+/// Removes the Entity's Component from this slot and returns its payload.
+/// Returns `None` if the Entity had no Component in this slot.
+/// Uses swap-remove to keep dense arrays contiguous.
+/// Raises `StaleEntity` or `ForeignEntity` for invalid Entities.
+pub fn[T] ComponentKey::remove(
+  self : ComponentKey[T],
+  entity : Entity,
+) -> T? raise ECSError {
+  self.validate_entity(entity)
+  let dense_idx = self.sparse_lookup(entity)
+  if dense_idx < 0 {
+    None
+  } else {
+    let last_idx = self.dense_entities.length() - 1
+    let removed = self.dense_payloads[dense_idx]
+    if dense_idx != last_idx {
+      // Swap-remove: move last element into the removed slot
+      let last_entity = self.dense_entities[last_idx]
+      self.dense_entities[dense_idx] = last_entity
+      self.dense_payloads[dense_idx] = self.dense_payloads[last_idx]
+      // Repair the moved entity's sparse mapping
+      self.sparse[last_entity.index] = dense_idx
+    }
+    // Pop the last element
+    ignore(self.dense_entities.remove(last_idx))
+    ignore(self.dense_payloads.remove(last_idx))
+    self.sparse[entity.index] = -1
+    Some(removed)
+  }
+}
+
+///|
+/// Clears every Component from this slot without despawning any Entity.
+/// After clear, the slot is empty and its length reports zero.
+pub fn[T] ComponentKey::clear(self : ComponentKey[T]) -> Unit {
+  for i in 0..<self.dense_entities.length() {
+    self.sparse[self.dense_entities[i].index] = -1
+  }
+  while self.dense_entities.length() > 0 {
+    ignore(self.dense_entities.remove(self.dense_entities.length() - 1))
+    ignore(self.dense_payloads.remove(self.dense_payloads.length() - 1))
+  }
+}

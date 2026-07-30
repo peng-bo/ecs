@@ -259,3 +259,81 @@ test "multiple entities can hold components independently" {
   inspect(@ecs.ComponentKey::get(k, e2), content="Some(200)")
   inspect(@ecs.ComponentKey::len(k), content="2")
 }
+
+// --- #5: Remove and clear Components with sparse-set integrity ---
+
+///|
+test "remove present component returns payload" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 42))
+  inspect(@ecs.ComponentKey::remove(k, e), content="Some(42)")
+  inspect(@ecs.ComponentKey::len(k), content="0")
+  inspect(@ecs.ComponentKey::contains(k, e), content="false")
+}
+
+///|
+test "remove absent component returns None" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  inspect(@ecs.ComponentKey::remove(k, e), content="None")
+  inspect(@ecs.ComponentKey::len(k), content="0")
+}
+
+///|
+test "remove stale entity raises StaleEntity" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  @ecs.World::despawn(w, e)
+  try @ecs.ComponentKey::remove(k, e) catch {
+    ECSError::StaleEntity => inspect("stale", content="stale")
+    _ => fail("expected StaleEntity")
+  } noraise {
+    _ => fail("expected StaleEntity")
+  }
+}
+
+///|
+test "clear empties slot without despawning entities" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let e2 = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e1, 10))
+  ignore(@ecs.ComponentKey::set(k, e2, 20))
+  @ecs.ComponentKey::clear(k)
+  inspect(@ecs.ComponentKey::len(k), content="0")
+  inspect(@ecs.ComponentKey::is_empty(k), content="true")
+  inspect(@ecs.World::is_alive(w, e1), content="true")
+  inspect(@ecs.World::is_alive(w, e2), content="true")
+}
+
+///|
+test "remove preserves other entities' components" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let e2 = @ecs.World::spawn(w)
+  let e3 = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e1, 100))
+  ignore(@ecs.ComponentKey::set(k, e2, 200))
+  ignore(@ecs.ComponentKey::set(k, e3, 300))
+  ignore(@ecs.ComponentKey::remove(k, e2))
+  inspect(@ecs.ComponentKey::len(k), content="2")
+  inspect(@ecs.ComponentKey::get(k, e1), content="Some(100)")
+  inspect(@ecs.ComponentKey::get(k, e3), content="Some(300)")
+  inspect(@ecs.ComponentKey::contains(k, e2), content="false")
+}
+
+///|
+test "clear empty slot is idempotent" {
+  let w = @ecs.World::new()
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  @ecs.ComponentKey::clear(k)
+  inspect(@ecs.ComponentKey::len(k), content="0")
+  @ecs.ComponentKey::clear(k)
+  inspect(@ecs.ComponentKey::len(k), content="0")
+}

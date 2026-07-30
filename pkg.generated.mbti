@@ -27,11 +27,13 @@ pub struct ComponentKey[T] {
   dense_entities : Array[Entity]
   dense_payloads : Array[T]
 }
+pub fn[T] ComponentKey::clear(Self[T]) -> Unit
 pub fn[T] ComponentKey::contains(Self[T], Entity) -> Bool raise ECSError
 pub fn[T] ComponentKey::get(Self[T], Entity) -> T? raise ECSError
 pub fn[T] ComponentKey::id(Self[T]) -> ComponentID
 pub fn[T] ComponentKey::is_empty(Self[T]) -> Bool
 pub fn[T] ComponentKey::len(Self[T]) -> Int
+pub fn[T] ComponentKey::remove(Self[T], Entity) -> T? raise ECSError
 pub fn[T] ComponentKey::set(Self[T], Entity, T) -> T? raise ECSError
 
 pub struct Entity {
