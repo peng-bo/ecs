@@ -692,3 +692,128 @@ test "smallest pool chosen as driver" {
   // Only e_small has both components
   inspect(count, content="1")
 }
+
+// --- #11: Add excluded Slots and validate query constraints ---
+
+///|
+test "add_excluded returns new immutable plan" {
+  let w = @ecs.World::new()
+  let k1 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k2 : @ecs.ComponentKey[String] = @ecs.World::register(w)
+  let plan1 = @ecs.World::query(w, k1)
+  let plan2 = @ecs.QueryPlan::add_excluded(plan1, k2)
+  let mut c1 = 0
+  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit raise ECSError { c1 = c1 + 1 })
+  let mut c2 = 0
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  inspect(c1, content="0")
+  inspect(c2, content="0")
+}
+
+///|
+test "excluded slot filters out matching entities" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let e2 = @ecs.World::spawn(w)
+  let e3 = @ecs.World::spawn(w)
+  let k_i : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_s : @ecs.ComponentKey[String] = @ecs.World::register(w)
+  // e1, e2 have Int; e2 also has String (should be excluded)
+  ignore(@ecs.ComponentKey::set(k_i, e1, 1))
+  ignore(@ecs.ComponentKey::set(k_i, e2, 2))
+  ignore(@ecs.ComponentKey::set(k_s, e2, "x"))
+  ignore(@ecs.ComponentKey::set(k_i, e3, 3))
+  let plan = @ecs.World::query(w, k_i)
+  let plan = @ecs.QueryPlan::add_excluded(plan, k_s)
+  let mut count = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { count = count + 1 })
+  inspect(count, content="2")
+}
+
+///|
+test "exclude same key twice is idempotent" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let k_i : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_s : @ecs.ComponentKey[String] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k_i, e1, 1))
+  ignore(@ecs.ComponentKey::set(k_s, e1, "x"))
+  let plan1 = @ecs.World::query(w, k_i)
+  let plan2 = @ecs.QueryPlan::add_excluded(plan1, k_s)
+  let plan3 = @ecs.QueryPlan::add_excluded(plan2, k_s)
+  let mut c2 = 0
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  let mut c3 = 0
+  @ecs.QueryPlan::each(plan3, fn(_e) -> Unit raise ECSError { c3 = c3 + 1 })
+  inspect(c2, content="0")
+  inspect(c3, content="0")
+}
+
+///|
+test "require then exclude same key raises ContradictoryQuery" {
+  let w = @ecs.World::new()
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let plan = @ecs.World::query(w, k)
+  try @ecs.QueryPlan::add_excluded(plan, k) catch {
+    ECSError::ContradictoryQuery =>
+      inspect("contradiction", content="contradiction")
+    _ => fail("expected ContradictoryQuery")
+  } noraise {
+    _ => fail("expected ContradictoryQuery")
+  }
+}
+
+///|
+test "exclude then require same key raises ContradictoryQuery" {
+  let w = @ecs.World::new()
+  let k1 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k2 : @ecs.ComponentKey[String] = @ecs.World::register(w)
+  let plan = @ecs.World::query(w, k1)
+  let plan = @ecs.QueryPlan::add_excluded(plan, k2)
+  try @ecs.QueryPlan::add_required(plan, k2) catch {
+    ECSError::ContradictoryQuery =>
+      inspect("contradiction", content="contradiction")
+    _ => fail("expected ContradictoryQuery")
+  } noraise {
+    _ => fail("expected ContradictoryQuery")
+  }
+}
+
+///|
+test "foreign key rejected on add_excluded" {
+  let w1 = @ecs.World::new()
+  let w2 = @ecs.World::new()
+  let k1 : @ecs.ComponentKey[Int] = @ecs.World::register(w1)
+  let k2 : @ecs.ComponentKey[Int] = @ecs.World::register(w2)
+  let plan = @ecs.World::query(w1, k1)
+  try @ecs.QueryPlan::add_excluded(plan, k2) catch {
+    ECSError::ForeignComponentKey => inspect("foreign", content="foreign")
+    _ => fail("expected ForeignComponentKey")
+  } noraise {
+    _ => fail("expected ForeignComponentKey")
+  }
+}
+
+///|
+test "multiple required and excluded slots combine correctly" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let e2 = @ecs.World::spawn(w)
+  let e3 = @ecs.World::spawn(w)
+  let k_i : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_s : @ecs.ComponentKey[String] = @ecs.World::register(w)
+  let k_d : @ecs.ComponentKey[Double] = @ecs.World::register(w)
+  // e1: i+s, e2: i+d, e3: i
+  ignore(@ecs.ComponentKey::set(k_i, e1, 1))
+  ignore(@ecs.ComponentKey::set(k_s, e1, "a"))
+  ignore(@ecs.ComponentKey::set(k_i, e2, 2))
+  ignore(@ecs.ComponentKey::set(k_d, e2, 0.5))
+  ignore(@ecs.ComponentKey::set(k_i, e3, 3))
+  let plan = @ecs.World::query(w, k_i)
+  let plan = @ecs.QueryPlan::add_excluded(plan, k_s)
+  let plan = @ecs.QueryPlan::add_excluded(plan, k_d)
+  let mut count = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { count = count + 1 })
+  // only e3 remains
+  inspect(count, content="1")
+}

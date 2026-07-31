@@ -20,6 +20,8 @@ pub(all) suberror ECSError {
   StructuralMutationDuringQuery
   /// A ComponentKey from another World was used in a query.
   ForeignComponentKey
+  /// A ComponentKey was both required and excluded in a query.
+  ContradictoryQuery
 } derive(Debug, Eq)
 
 // --- Entity ---
@@ -193,7 +195,11 @@ pub fn World::clear(self : World) -> Unit raise ECSError {
 pub struct QueryPlan {
   world : World
   drivers : Array[Array[Entity]]
+  driver_slots : Array[Int]
   checks : Array[(Entity) -> Bool]
+  excluded : Array[Array[Entity]]
+  excluded_slots : Array[Int]
+  excluded_checks : Array[(Entity) -> Bool]
 }
 
 ///|
@@ -207,14 +213,27 @@ pub fn[T] World::query(
     raise ECSError::ForeignComponentKey
   }
   let drivers : Array[Array[Entity]] = [key.dense_entities]
+  let driver_slots : Array[Int] = [key.id.slot_index]
   let checks : Array[(Entity) -> Bool] = []
-  QueryPlan::{ world: self, drivers, checks }
+  let excluded : Array[Array[Entity]] = []
+  let excluded_slots : Array[Int] = []
+  let excluded_checks : Array[(Entity) -> Bool] = []
+  QueryPlan::{
+    world: self,
+    drivers,
+    driver_slots,
+    checks,
+    excluded,
+    excluded_slots,
+    excluded_checks,
+  }
 }
 
 ///|
 /// Returns a new QueryPlan with an additional required ComponentKey.
 /// The source plan remains unchanged. Adding the same key is idempotent.
 /// Raises `ForeignComponentKey` if the key belongs to a different World.
+/// Raises `ContradictoryQuery` if the key is already excluded.
 pub fn[T] QueryPlan::add_required(
   self : QueryPlan,
   key : ComponentKey[T],
@@ -222,10 +241,21 @@ pub fn[T] QueryPlan::add_required(
   if key.world.world_id != self.world.world_id {
     raise ECSError::ForeignComponentKey
   }
-  // Idempotency: same dense array already present
+  let slot = key.id.slot_index
+  // Contradiction: key already excluded
+  let mut contradicted = false
+  for i in 0..<self.excluded_slots.length() {
+    if self.excluded_slots[i] == slot {
+      contradicted = true
+    }
+  }
+  if contradicted {
+    raise ECSError::ContradictoryQuery
+  }
+  // Idempotency: same slot already required
   let mut duplicate = false
-  for i in 0..<self.drivers.length() {
-    if self.drivers[i] == key.dense_entities {
+  for i in 0..<self.driver_slots.length() {
+    if self.driver_slots[i] == slot {
       duplicate = true
     }
   }
@@ -237,13 +267,88 @@ pub fn[T] QueryPlan::add_required(
       new_drivers.push(self.drivers[i])
     }
     new_drivers.push(key.dense_entities)
+    let new_driver_slots : Array[Int] = []
+    for i in 0..<self.driver_slots.length() {
+      new_driver_slots.push(self.driver_slots[i])
+    }
+    new_driver_slots.push(slot)
     let new_checks : Array[(Entity) -> Bool] = []
     for i in 0..<self.checks.length() {
       new_checks.push(self.checks[i])
     }
     let pool = key.world.erased_pools[key.id.slot_index]
     new_checks.push(pool.contains_entity)
-    QueryPlan::{ world: self.world, drivers: new_drivers, checks: new_checks }
+    QueryPlan::{
+      world: self.world,
+      drivers: new_drivers,
+      driver_slots: new_driver_slots,
+      checks: new_checks,
+      excluded: self.excluded,
+      excluded_slots: self.excluded_slots,
+      excluded_checks: self.excluded_checks,
+    }
+  }
+}
+
+///|
+/// Returns a new QueryPlan that excludes Entities having a Component in the
+/// given slot. The source plan remains unchanged. Excluding the same key
+/// twice is idempotent.
+/// Raises `ForeignComponentKey` if the key belongs to a different World.
+/// Raises `ContradictoryQuery` if the key is already required.
+pub fn[T] QueryPlan::add_excluded(
+  self : QueryPlan,
+  key : ComponentKey[T],
+) -> QueryPlan raise ECSError {
+  if key.world.world_id != self.world.world_id {
+    raise ECSError::ForeignComponentKey
+  }
+  let slot = key.id.slot_index
+  // Contradiction: key already required
+  let mut contradicted = false
+  for i in 0..<self.driver_slots.length() {
+    if self.driver_slots[i] == slot {
+      contradicted = true
+    }
+  }
+  if contradicted {
+    raise ECSError::ContradictoryQuery
+  }
+  // Idempotency: same slot already excluded
+  let mut duplicate = false
+  for i in 0..<self.excluded_slots.length() {
+    if self.excluded_slots[i] == slot {
+      duplicate = true
+    }
+  }
+  if duplicate {
+    self
+  } else {
+    let new_excluded : Array[Array[Entity]] = []
+    for i in 0..<self.excluded.length() {
+      new_excluded.push(self.excluded[i])
+    }
+    new_excluded.push(key.dense_entities)
+    let new_excluded_slots : Array[Int] = []
+    for i in 0..<self.excluded_slots.length() {
+      new_excluded_slots.push(self.excluded_slots[i])
+    }
+    new_excluded_slots.push(slot)
+    let new_excluded_checks : Array[(Entity) -> Bool] = []
+    for i in 0..<self.excluded_checks.length() {
+      new_excluded_checks.push(self.excluded_checks[i])
+    }
+    let pool = key.world.erased_pools[key.id.slot_index]
+    new_excluded_checks.push(pool.contains_entity)
+    QueryPlan::{
+      world: self.world,
+      drivers: self.drivers,
+      driver_slots: self.driver_slots,
+      checks: self.checks,
+      excluded: new_excluded,
+      excluded_slots: new_excluded_slots,
+      excluded_checks: new_excluded_checks,
+    }
   }
 }
 
@@ -294,6 +399,18 @@ fn QueryPlan::matches_all(self : QueryPlan, entity : Entity) -> Bool {
       j = self.checks.length()
     } else {
       j = j + 1
+    }
+  }
+  if ok {
+    // Every excluded membership must be false
+    let mut k = 0
+    while k < self.excluded_checks.length() {
+      if self.excluded_checks[k](entity) {
+        ok = false
+        k = self.excluded_checks.length()
+      } else {
+        k = k + 1
+      }
     }
   }
   ok
