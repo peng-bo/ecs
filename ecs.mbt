@@ -191,16 +191,21 @@ pub fn World::clear(self : World) -> Unit raise ECSError {
 // --- Query Plan ---
 
 ///|
+/// One Component-presence constraint on a QueryPlan: the slot identity,
+/// its dense Entity array, and the erased membership check.
+struct Constraint {
+  slot_index : Int
+  dense : Array[Entity]
+  check : (Entity) -> Bool
+}
+
+///|
 /// An immutable, reusable description of which Entities to visit.
 /// Created from one or more required ComponentKeys and executed via `each`.
 pub struct QueryPlan {
   world : World
-  drivers : Array[Array[Entity]]
-  driver_slots : Array[Int]
-  checks : Array[(Entity) -> Bool]
-  excluded : Array[Array[Entity]]
-  excluded_slots : Array[Int]
-  excluded_checks : Array[(Entity) -> Bool]
+  required : Array[Constraint]
+  excluded : Array[Constraint]
 }
 
 ///|
@@ -213,23 +218,17 @@ pub fn[T] World::query(
   if key.world.world_id != self.world_id {
     raise ECSError::ForeignComponentKey
   }
-  // Driver array obtained through the erased pool — never key internals
+  // Constraint built from the erased pool — never key internals
   let pool = self.erased_pools[key.id.slot_index]
-  let drivers : Array[Array[Entity]] = [(pool.dense)()]
-  let driver_slots : Array[Int] = [key.id.slot_index]
-  let checks : Array[(Entity) -> Bool] = []
-  let excluded : Array[Array[Entity]] = []
-  let excluded_slots : Array[Int] = []
-  let excluded_checks : Array[(Entity) -> Bool] = []
-  QueryPlan::{
-    world: self,
-    drivers,
-    driver_slots,
-    checks,
-    excluded,
-    excluded_slots,
-    excluded_checks,
-  }
+  let required : Array[Constraint] = [
+    Constraint::{
+      slot_index: key.id.slot_index,
+      dense: (pool.dense)(),
+      check: pool.contains_entity,
+    },
+  ]
+  let excluded : Array[Constraint] = []
+  QueryPlan::{ world: self, required, excluded }
 }
 
 ///|
@@ -246,49 +245,28 @@ pub fn[T] QueryPlan::add_required(
   }
   let slot = key.id.slot_index
   // Contradiction: key already excluded
-  let mut contradicted = false
-  for i in 0..<self.excluded_slots.length() {
-    if self.excluded_slots[i] == slot {
-      contradicted = true
-    }
-  }
-  if contradicted {
+  if self.contains_slot(self.excluded, slot) {
     raise ECSError::ContradictoryQuery
   }
   // Idempotency: same slot already required
-  let mut duplicate = false
-  for i in 0..<self.driver_slots.length() {
-    if self.driver_slots[i] == slot {
-      duplicate = true
-    }
-  }
-  if duplicate {
+  if self.contains_slot(self.required, slot) {
     self
   } else {
-    let new_drivers : Array[Array[Entity]] = []
-    for i in 0..<self.drivers.length() {
-      new_drivers.push(self.drivers[i])
+    let pool = key.world.erased_pools[slot]
+    let new_constraint = Constraint::{
+      slot_index: slot,
+      dense: (pool.dense)(),
+      check: pool.contains_entity,
     }
-    new_drivers.push(key.dense_entities)
-    let new_driver_slots : Array[Int] = []
-    for i in 0..<self.driver_slots.length() {
-      new_driver_slots.push(self.driver_slots[i])
+    let new_required : Array[Constraint] = []
+    for i in 0..<self.required.length() {
+      new_required.push(self.required[i])
     }
-    new_driver_slots.push(slot)
-    let new_checks : Array[(Entity) -> Bool] = []
-    for i in 0..<self.checks.length() {
-      new_checks.push(self.checks[i])
-    }
-    let pool = key.world.erased_pools[key.id.slot_index]
-    new_checks.push(pool.contains_entity)
+    new_required.push(new_constraint)
     QueryPlan::{
       world: self.world,
-      drivers: new_drivers,
-      driver_slots: new_driver_slots,
-      checks: new_checks,
+      required: new_required,
       excluded: self.excluded,
-      excluded_slots: self.excluded_slots,
-      excluded_checks: self.excluded_checks,
     }
   }
 }
@@ -308,49 +286,28 @@ pub fn[T] QueryPlan::add_excluded(
   }
   let slot = key.id.slot_index
   // Contradiction: key already required
-  let mut contradicted = false
-  for i in 0..<self.driver_slots.length() {
-    if self.driver_slots[i] == slot {
-      contradicted = true
-    }
-  }
-  if contradicted {
+  if self.contains_slot(self.required, slot) {
     raise ECSError::ContradictoryQuery
   }
   // Idempotency: same slot already excluded
-  let mut duplicate = false
-  for i in 0..<self.excluded_slots.length() {
-    if self.excluded_slots[i] == slot {
-      duplicate = true
-    }
-  }
-  if duplicate {
+  if self.contains_slot(self.excluded, slot) {
     self
   } else {
-    let new_excluded : Array[Array[Entity]] = []
+    let pool = key.world.erased_pools[slot]
+    let new_constraint = Constraint::{
+      slot_index: slot,
+      dense: (pool.dense)(),
+      check: pool.contains_entity,
+    }
+    let new_excluded : Array[Constraint] = []
     for i in 0..<self.excluded.length() {
       new_excluded.push(self.excluded[i])
     }
-    new_excluded.push(key.dense_entities)
-    let new_excluded_slots : Array[Int] = []
-    for i in 0..<self.excluded_slots.length() {
-      new_excluded_slots.push(self.excluded_slots[i])
-    }
-    new_excluded_slots.push(slot)
-    let new_excluded_checks : Array[(Entity) -> Bool] = []
-    for i in 0..<self.excluded_checks.length() {
-      new_excluded_checks.push(self.excluded_checks[i])
-    }
-    let pool = key.world.erased_pools[key.id.slot_index]
-    new_excluded_checks.push(pool.contains_entity)
+    new_excluded.push(new_constraint)
     QueryPlan::{
       world: self.world,
-      drivers: self.drivers,
-      driver_slots: self.driver_slots,
-      checks: self.checks,
+      required: self.required,
       excluded: new_excluded,
-      excluded_slots: new_excluded_slots,
-      excluded_checks: new_excluded_checks,
     }
   }
 }
@@ -364,22 +321,21 @@ pub fn QueryPlan::each(
   body : (Entity) -> Unit raise ECSError,
 ) -> Unit raise ECSError {
   self.world.query_depth = self.world.query_depth + 1
-  let driver = if self.drivers.length() == 0 {
-    []
-  } else {
-    let mut best = self.drivers[0]
-    for i in 1..<self.drivers.length() {
-      if self.drivers[i].length() < best.length() {
-        best = self.drivers[i]
-      }
+  // Select the smallest required pool as the driver
+  let mut driver_idx = 0
+  let mut best = self.required[0]
+  for i in 1..<self.required.length() {
+    if self.required[i].dense.length() < best.dense.length() {
+      best = self.required[i]
+      driver_idx = i
     }
-    best
   }
+  let driver = best.dense
   let mut i = 0
   let n = driver.length()
   while i < n {
     let entity = driver[i]
-    if self.world.is_alive(entity) && self.matches_all(entity) {
+    if self.world.is_alive(entity) && self.matches_all(entity, driver_idx) {
       body(entity) catch {
         err => {
           self.world.query_depth = self.world.query_depth - 1
@@ -393,13 +349,17 @@ pub fn QueryPlan::each(
 }
 
 ///|
-fn QueryPlan::matches_all(self : QueryPlan, entity : Entity) -> Bool {
+fn QueryPlan::matches_all(
+  self : QueryPlan,
+  entity : Entity,
+  skip : Int,
+) -> Bool {
   let mut ok = true
   let mut j = 0
-  while j < self.checks.length() {
-    if !self.checks[j](entity) {
+  while j < self.required.length() {
+    if j != skip && !(self.required[j].check)(entity) {
       ok = false
-      j = self.checks.length()
+      j = self.required.length()
     } else {
       j = j + 1
     }
@@ -407,16 +367,31 @@ fn QueryPlan::matches_all(self : QueryPlan, entity : Entity) -> Bool {
   if ok {
     // Every excluded membership must be false
     let mut k = 0
-    while k < self.excluded_checks.length() {
-      if self.excluded_checks[k](entity) {
+    while k < self.excluded.length() {
+      if (self.excluded[k].check)(entity) {
         ok = false
-        k = self.excluded_checks.length()
+        k = self.excluded.length()
       } else {
         k = k + 1
       }
     }
   }
   ok
+}
+
+///|
+fn QueryPlan::contains_slot(
+  self : QueryPlan,
+  constraints : Array[Constraint],
+  slot : Int,
+) -> Bool {
+  let mut found = false
+  for i in 0..<constraints.length() {
+    if constraints[i].slot_index == slot {
+      found = true
+    }
+  }
+  found
 }
 
 // --- Structural mutation guard ---
