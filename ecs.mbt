@@ -43,6 +43,7 @@ struct ErasedPool {
   remove_entity : (Entity) -> Unit
   clear_all : () -> Unit raise ECSError
   contains_entity : (Entity) -> Bool
+  dense : () -> Array[Entity]
 }
 
 // --- World ---
@@ -212,7 +213,9 @@ pub fn[T] World::query(
   if key.world.world_id != self.world_id {
     raise ECSError::ForeignComponentKey
   }
-  let drivers : Array[Array[Entity]] = [key.dense_entities]
+  // Driver array obtained through the erased pool — never key internals
+  let pool = self.erased_pools[key.id.slot_index]
+  let drivers : Array[Array[Entity]] = [(pool.dense)()]
   let driver_slots : Array[Int] = [key.id.slot_index]
   let checks : Array[(Entity) -> Bool] = []
   let excluded : Array[Array[Entity]] = []
@@ -457,6 +460,7 @@ pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
     },
     clear_all: fn() -> Unit raise ECSError { key.clear() },
     contains_entity: fn(e : Entity) -> Bool { key.contains_entity(e) },
+    dense: fn() -> Array[Entity] { key.dense_entities },
   }
   self.erased_pools.push(pool)
   key
