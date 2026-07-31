@@ -817,3 +817,142 @@ test "multiple required and excluded slots combine correctly" {
   // only e3 remains
   inspect(count, content="1")
 }
+
+// --- #12: Permit safe nesting and payload replacement in queries ---
+
+///|
+test "nested read-only query is allowed" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 42))
+  let plan = @ecs.World::query(w, k)
+  let mut outer = 0
+  let mut inner = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+    outer = outer + 1
+    @ecs.QueryPlan::each(plan, fn(_e2) -> Unit raise ECSError {
+      inner = inner + 1
+    })
+  })
+  inspect(outer, content="1")
+  inspect(inner, content="1")
+}
+
+///|
+test "replacing existing payload during query is allowed" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 10))
+  let plan = @ecs.World::query(w, k)
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+    ignore(@ecs.ComponentKey::set(k, e, 99))
+  })
+  inspect(@ecs.ComponentKey::get(k, e), content="Some(99)")
+}
+
+///|
+test "setting missing component during query is rejected" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let e2 = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e1, 1))
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      // e2 has no component — first insertion is structural
+      ignore(@ecs.ComponentKey::set(k, e2, 2))
+    })
+  catch {
+    ECSError::StructuralMutationDuringQuery =>
+      inspect("blocked", content="blocked")
+    _ => fail("expected StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "spawn during query is rejected" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 1))
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      ignore(@ecs.World::spawn(w))
+    })
+  catch {
+    ECSError::StructuralMutationDuringQuery =>
+      inspect("blocked", content="blocked")
+    _ => fail("expected StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "remove during query is rejected" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 1))
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      ignore(@ecs.ComponentKey::remove(k, e))
+    })
+  catch {
+    ECSError::StructuralMutationDuringQuery =>
+      inspect("blocked", content="blocked")
+    _ => fail("expected StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "clear slot during query is rejected" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 1))
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      @ecs.ComponentKey::clear(k)
+    })
+  catch {
+    ECSError::StructuralMutationDuringQuery =>
+      inspect("blocked", content="blocked")
+    _ => fail("expected StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "query guard restored after callback error" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 10))
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      raise ECSError::StaleEntity
+    })
+  catch {
+    ECSError::StaleEntity => ()
+    _ => fail("expected StaleEntity")
+  } noraise {
+    _ => fail("expected error")
+  }
+  // After error, operations work normally — guard was restored
+  inspect(@ecs.World::len(w), content="1")
+  ignore(@ecs.ComponentKey::set(k, e, 99))
+  inspect(@ecs.ComponentKey::get(k, e), content="Some(99)")
+}
