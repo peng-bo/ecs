@@ -40,6 +40,8 @@ pub fn[T] ComponentKey::len(Self[T]) -> Int
 pub fn[T] ComponentKey::remove(Self[T], Entity) -> T? raise ECSError
 pub fn[T] ComponentKey::set(Self[T], Entity, T) -> T? raise ECSError
 
+type Constraint
+
 pub struct Entity {
   index : Int
   generation : Int
@@ -50,12 +52,8 @@ type ErasedPool
 
 pub struct QueryPlan {
   world : World
-  drivers : Array[Array[Entity]]
-  driver_slots : Array[Int]
-  checks : Array[(Entity) -> Bool]
-  excluded : Array[Array[Entity]]
-  excluded_slots : Array[Int]
-  excluded_checks : Array[(Entity) -> Bool]
+  required : Array[Constraint]
+  excluded : Array[Constraint]
 }
 pub fn[T] QueryPlan::add_excluded(Self, ComponentKey[T]) -> Self raise ECSError
 pub fn[T] QueryPlan::add_required(Self, ComponentKey[T]) -> Self raise ECSError

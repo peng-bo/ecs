@@ -138,13 +138,7 @@ pub fn World::despawn(self : World, entity : Entity) -> Unit raise ECSError {
   if self.query_depth > 0 {
     raise ECSError::StructuralMutationDuringQuery
   }
-  if entity.world_id != self.world_id {
-    raise ECSError::ForeignEntity
-  }
-  if entity.index >= self.gens.length() ||
-    self.gens[entity.index] != entity.generation {
-    raise ECSError::StaleEntity
-  }
+  self.ensure_alive(entity)
   // Remove entity from every registered Component Slot
   for i in 0..<self.erased_pools.length() {
     (self.erased_pools[i].remove_entity)(entity)
@@ -156,12 +150,29 @@ pub fn World::despawn(self : World, entity : Entity) -> Unit raise ECSError {
 }
 
 ///|
+/// Raises `ForeignEntity` if the Entity belongs to a different World,
+/// `StaleEntity` if the Entity is no longer alive in this World.
+/// The single source of truth for Entity liveness in this World.
+fn World::ensure_alive(self : World, entity : Entity) -> Unit raise ECSError {
+  if entity.world_id != self.world_id {
+    raise ECSError::ForeignEntity
+  }
+  if entity.index >= self.gens.length() ||
+    self.gens[entity.index] != entity.generation {
+    raise ECSError::StaleEntity
+  }
+}
+
+///|
 /// Returns true if the Entity is alive in this World.
 /// An Entity is alive when its generation matches and it has not been despawned.
 pub fn World::is_alive(self : World, entity : Entity) -> Bool {
-  entity.world_id == self.world_id &&
-  entity.index < self.gens.length() &&
-  self.gens[entity.index] == entity.generation
+  try {
+    self.ensure_alive(entity)
+    true
+  } catch {
+    _ => false
+  }
 }
 
 ///|
@@ -523,13 +534,7 @@ fn[T] ComponentKey::validate_entity(
   self : ComponentKey[T],
   entity : Entity,
 ) -> Unit raise ECSError {
-  if entity.world_id != self.world.world_id {
-    raise ECSError::ForeignEntity
-  }
-  if entity.index >= self.world.gens.length() ||
-    self.world.gens[entity.index] != entity.generation {
-    raise ECSError::StaleEntity
-  }
+  self.world.ensure_alive(entity)
 }
 
 ///|
