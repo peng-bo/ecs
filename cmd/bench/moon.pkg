@@ -1,0 +1,5 @@
+import {
+  "peng-bo/ecs",
+}
+
+pkgtype(kind: "executable")
