@@ -119,3 +119,32 @@ test "remove absent entity does not modify slot" {
   inspect(k.dense_entities.length(), content="0")
   inspect(pre_len, content="0")
 }
+
+///|
+test "erased pool exposes dense entity array" {
+  let w = World::new()
+  let e0 = World::spawn(w)
+  let e1 = World::spawn(w)
+  let k : ComponentKey[Int] = World::register(w)
+  ignore(k.set(e0, 10))
+  ignore(k.set(e1, 20))
+  // ErasedPool at slot_index 0 exposes the same dense array as the key
+  let dense = (w.erased_pools[0].dense)()
+  inspect(dense.length(), content="2")
+  inspect(dense[0] == e0, content="true")
+  inspect(dense[1] == e1, content="true")
+}
+
+///|
+test "erased pool dense tracks removals" {
+  let w = World::new()
+  let e0 = World::spawn(w)
+  let e1 = World::spawn(w)
+  let k : ComponentKey[Int] = World::register(w)
+  ignore(k.set(e0, 10))
+  ignore(k.set(e1, 20))
+  ignore(k.remove(e0))
+  let dense = (w.erased_pools[0].dense)()
+  inspect(dense.length(), content="1")
+  inspect(dense[0] == e1, content="true")
+}
