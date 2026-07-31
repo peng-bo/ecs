@@ -32,6 +32,18 @@ fn main raise {
   println("\n## Query Plan: Smallest Driver Effect (n = \{n}, m = \{m})")
   bench_smallest_driver(n, m)
 
+  // --- Query Plan: multi-required selectivity ---
+  println("\n## Query Plan: Multi-Required Selectivity")
+  bench_multi_required(n)
+
+  // --- Query Plan: excluded slot selectivity ---
+  println("\n## Query Plan: Excluded Slot Selectivity")
+  bench_excluded_selectivity(n)
+
+  // --- Query Plan: reuse after population change ---
+  println("\n## Query Plan: Reuse After Population Change")
+  bench_plan_reuse(n)
+
   println("\n=== Benchmarks complete ===")
 }
 
@@ -188,6 +200,129 @@ fn bench_smallest_driver(n : Int, m : Int) -> Unit raise {
   })
   // k_small (m entries) should be chosen as driver, limiting matched to m
   inspect_count("smallest_driver_matches", m, matched, m)
+}
+
+///|
+fn bench_multi_required(n : Int) -> Unit raise {
+  let w = @ecs.World::new()
+  let k_a : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_b : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_c : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  // Populate pools with different cardinalities
+  let n_a = n
+  let n_b = n / 2
+  let n_c = n / 10
+  for _ in 0..<n_a {
+    let e = @ecs.World::spawn(w)
+    ignore(@ecs.ComponentKey::set(k_a, e, 1))
+  }
+  for _ in 0..<n_b {
+    let e = @ecs.World::spawn(w)
+    ignore(@ecs.ComponentKey::set(k_a, e, 1))
+    ignore(@ecs.ComponentKey::set(k_b, e, 1))
+  }
+  for _ in 0..<n_c {
+    let e = @ecs.World::spawn(w)
+    ignore(@ecs.ComponentKey::set(k_a, e, 1))
+    ignore(@ecs.ComponentKey::set(k_b, e, 1))
+    ignore(@ecs.ComponentKey::set(k_c, e, 1))
+  }
+  // Query with 1, 2, and 3 required slots — observe driver effect
+  for required in [1, 2, 3] {
+    let plan = @ecs.World::query(w, k_a)
+    let plan = if required >= 2 {
+      @ecs.QueryPlan::add_required(plan, k_b)
+    } else {
+      plan
+    }
+    let plan = if required >= 3 {
+      @ecs.QueryPlan::add_required(plan, k_c)
+    } else {
+      plan
+    }
+    let mut matched = 0
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise @ecs.ECSError {
+      matched = matched + 1
+    })
+    let expected = if required == 1 {
+      n_a + n_b + n_c
+    } else if required == 2 {
+      n_b + n_c
+    } else {
+      n_c
+    }
+    let label = "\{required}_required_slots"
+    inspect_count(label, expected, matched, expected)
+  }
+}
+
+///|
+fn bench_excluded_selectivity(n : Int) -> Unit raise {
+  let w = @ecs.World::new()
+  let k_req : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_ex1 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let k_ex2 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let mut ex1_count = 0
+  let mut ex2_count = 0
+  // Pre-populate: spawn n entities, all get required, subsets get excluded
+  for i in 0..<n {
+    let e = @ecs.World::spawn(w)
+    ignore(@ecs.ComponentKey::set(k_req, e, 1))
+    if i < n / 4 {
+      ignore(@ecs.ComponentKey::set(k_ex1, e, 1))
+      ex1_count = ex1_count + 1
+    }
+    if i < n / 10 {
+      ignore(@ecs.ComponentKey::set(k_ex2, e, 1))
+      ex2_count = ex2_count + 1
+    }
+  }
+  // 0 excluded: all n entities
+  let plan0 = @ecs.World::query(w, k_req)
+  let mut m0 = 0
+  @ecs.QueryPlan::each(plan0, fn(_e) -> Unit raise @ecs.ECSError { m0 = m0 + 1 })
+  inspect_count("0_excluded", n, m0, n)
+  // 1 excluded: ~75% pass
+  let plan1 = @ecs.QueryPlan::add_excluded(plan0, k_ex1)
+  let mut m1 = 0
+  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit raise @ecs.ECSError { m1 = m1 + 1 })
+  inspect_count("1_excluded", n - ex1_count, m1, n - ex1_count)
+  // 2 excluded: ~65% pass
+  let plan2 = @ecs.QueryPlan::add_excluded(plan1, k_ex2)
+  let mut m2 = 0
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise @ecs.ECSError { m2 = m2 + 1 })
+  inspect_count("2_excluded", n - ex1_count, m2, n - ex1_count)
+}
+
+///|
+fn bench_plan_reuse(n : Int) -> Unit raise {
+  let w = @ecs.World::new()
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  let plan = @ecs.World::query(w, k)
+  // First run: empty
+  let mut c0 = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise @ecs.ECSError { c0 = c0 + 1 })
+  inspect_count("reuse_empty", 0, c0, 0)
+  // Populate
+  let es : Array[@ecs.Entity] = []
+  for _ in 0..<n {
+    let e = @ecs.World::spawn(w)
+    ignore(@ecs.ComponentKey::set(k, e, 1))
+    es.push(e)
+  }
+  // Second run with same plan: sees new entities
+  let mut c1 = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise @ecs.ECSError { c1 = c1 + 1 })
+  inspect_count("reuse_after_populate", n, c1, n)
+  // Despawn half (outside query — mutation during each is forbidden)
+  let half = n / 2
+  for i in 0..<half {
+    @ecs.World::despawn(w, es[i])
+  }
+  // Third run: sees remaining entities
+  let mut c2 = 0
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise @ecs.ECSError { c2 = c2 + 1 })
+  inspect_count("reuse_after_despawn", n - n / 2, c2, n - n / 2)
 }
 
 ///|
