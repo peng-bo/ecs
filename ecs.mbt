@@ -610,15 +610,17 @@ pub fn[T] ComponentKey::set(
   entity : Entity,
   value : T,
 ) -> T? raise ECSError {
-  self.check_no_query()
   self.validate_entity(entity)
   self.grow_sparse(entity.index)
   let dense_idx = self.sparse[entity.index]
   if dense_idx >= 0 {
+    // Replacement: allowed even during query (non-structural)
     let old = self.dense_payloads[dense_idx]
     self.dense_payloads[dense_idx] = value
     Some(old)
   } else {
+    // First insertion is structural — reject during query
+    self.check_no_query()
     let new_idx = self.dense_entities.length()
     self.sparse[entity.index] = new_idx
     self.dense_entities.push(entity)
