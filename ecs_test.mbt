@@ -964,6 +964,47 @@ test "clear slot during query is rejected" {
 }
 
 ///|
+test "world clear during query is rejected" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 1))
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      @ecs.World::clear(w)
+    })
+  catch {
+    ECSError::StructuralMutationDuringQuery =>
+      inspect("blocked", content="blocked")
+    _ => fail("expected StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "register during query is rejected" {
+  let w = @ecs.World::new()
+  let e = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e, 1))
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      let k2 : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+      ignore(k2)
+    })
+  catch {
+    ECSError::StructuralMutationDuringQuery =>
+      inspect("blocked", content="blocked")
+    _ => fail("expected StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StructuralMutationDuringQuery")
+  }
+}
+
+///|
 test "query guard restored after callback error" {
   let w = @ecs.World::new()
   let e = @ecs.World::spawn(w)

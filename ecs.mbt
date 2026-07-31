@@ -101,9 +101,7 @@ pub fn World::is_empty(self : World) -> Bool {
 /// Raises `EntityCapacityExhausted` when the allocator cannot
 /// allocate a new slot (all generation counters exhausted).
 pub fn World::spawn(self : World) -> Entity raise ECSError {
-  if self.query_depth > 0 {
-    raise ECSError::StructuralMutationDuringQuery
-  }
+  self.ensure_no_active_query()
   let (idx, gen) = if self.free.length() > 0 {
     // Reuse a despawned slot
     let i = self.free[self.free.length() - 1]
@@ -135,9 +133,7 @@ pub fn World::spawn(self : World) -> Entity raise ECSError {
 /// Raises `ForeignEntity` if the Entity belongs to a different World.
 /// Raises `StaleEntity` if the Entity is already dead.
 pub fn World::despawn(self : World, entity : Entity) -> Unit raise ECSError {
-  if self.query_depth > 0 {
-    raise ECSError::StructuralMutationDuringQuery
-  }
+  self.ensure_no_active_query()
   self.ensure_alive(entity)
   // Remove entity from every registered Component Slot
   for i in 0..<self.erased_pools.length() {
@@ -181,9 +177,7 @@ pub fn World::is_alive(self : World, entity : Entity) -> Bool {
 /// Keys remain valid for reuse. Every Entity issued before the clear becomes
 /// permanently stale.
 pub fn World::clear(self : World) -> Unit raise ECSError {
-  if self.query_depth > 0 {
-    raise ECSError::StructuralMutationDuringQuery
-  }
+  self.ensure_no_active_query()
   // Clear every registered Component Slot
   for i in 0..<self.erased_pools.length() {
     (self.erased_pools[i].clear_all)()
@@ -408,10 +402,10 @@ fn QueryPlan::contains_slot(
 // --- Structural mutation guard ---
 
 ///|
-fn[T] ComponentKey::check_no_query(
-  self : ComponentKey[T],
-) -> Unit raise ECSError {
-  if self.world.query_depth > 0 {
+/// Raises `StructuralMutationDuringQuery` while a query is executing.
+/// The single source of truth for the structural mutation guard.
+fn World::ensure_no_active_query(self : World) -> Unit raise ECSError {
+  if self.query_depth > 0 {
     raise ECSError::StructuralMutationDuringQuery
   }
 }
@@ -420,9 +414,7 @@ fn[T] ComponentKey::check_no_query(
 /// Registers a new Component Slot for payload type `T` and returns a typed
 /// ComponentKey that provides access to the slot.
 pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
-  if self.query_depth > 0 {
-    raise ECSError::StructuralMutationDuringQuery
-  }
+  self.ensure_no_active_query()
   let slot = self.next_slot_index
   let next = slot + 1
   if next < slot {
@@ -604,7 +596,7 @@ pub fn[T] ComponentKey::set(
     Some(old)
   } else {
     // First insertion is structural — reject during query
-    self.check_no_query()
+    self.world.ensure_no_active_query()
     let new_idx = self.dense_entities.length()
     self.sparse[entity.index] = new_idx
     self.dense_entities.push(entity)
@@ -622,7 +614,7 @@ pub fn[T] ComponentKey::remove(
   self : ComponentKey[T],
   entity : Entity,
 ) -> T? raise ECSError {
-  self.check_no_query()
+  self.world.ensure_no_active_query()
   self.validate_entity(entity)
   let dense_idx = self.sparse_lookup(entity)
   if dense_idx < 0 {
@@ -650,7 +642,7 @@ pub fn[T] ComponentKey::remove(
 /// Clears every Component from this slot without despawning any Entity.
 /// After clear, the slot is empty and its length reports zero.
 pub fn[T] ComponentKey::clear(self : ComponentKey[T]) -> Unit raise ECSError {
-  self.check_no_query()
+  self.world.ensure_no_active_query()
   for i in 0..<self.dense_entities.length() {
     self.sparse[self.dense_entities[i].index] = -1
   }
