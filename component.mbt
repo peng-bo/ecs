@@ -173,26 +173,8 @@ pub fn[T] ComponentKey::remove(
   // Validate first so invalid handles raise Stale/Foreign even during a query
   self.validate_entity(entity)
   self.world.ensure_no_active_query()
-  let dense_idx = self.sparse_lookup(entity)
-  if dense_idx < 0 {
-    None
-  } else {
-    let last_idx = self.dense_entities.length() - 1
-    let removed = self.dense_payloads[dense_idx]
-    if dense_idx != last_idx {
-      // Swap-remove: move last element into the removed slot
-      let last_entity = self.dense_entities[last_idx]
-      self.dense_entities[dense_idx] = last_entity
-      self.dense_payloads[dense_idx] = self.dense_payloads[last_idx]
-      // Repair the moved entity's sparse mapping
-      self.sparse[last_entity.index] = dense_idx
-    }
-    // Pop the last element
-    ignore(self.dense_entities.remove(last_idx))
-    ignore(self.dense_payloads.remove(last_idx))
-    self.sparse[entity.index] = -1
-    Some(removed)
-  }
+  // The swap-remove logic lives in remove_entity — the single implementation
+  self.remove_entity(entity)
 }
 
 ///|
