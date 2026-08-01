@@ -62,35 +62,7 @@ pub fn[T] QueryPlan::add_required(
   self : QueryPlan,
   key : ComponentKey[T],
 ) -> QueryPlan raise ECSError {
-  if key.world.world_id != self.world.world_id {
-    raise ECSError::ForeignComponentKey
-  }
-  let slot = key.id.slot_index
-  // Contradiction: key already excluded
-  if self.contains_slot(self.excluded, slot) {
-    raise ECSError::ContradictoryQuery
-  }
-  // Idempotency: same slot already required
-  if self.contains_slot(self.required, slot) {
-    self
-  } else {
-    let pool = key.world.erased_pools[slot]
-    let new_constraint = Constraint::{
-      slot_index: slot,
-      dense: (pool.dense)(),
-      check: pool.contains_entity,
-    }
-    let new_required : Array[Constraint] = []
-    for i in 0..<self.required.length() {
-      new_required.push(self.required[i])
-    }
-    new_required.push(new_constraint)
-    QueryPlan::{
-      world: self.world,
-      required: new_required,
-      excluded: self.excluded,
-    }
-  }
+  self.with_key_appended(key, true)
 }
 
 ///|
@@ -103,16 +75,33 @@ pub fn[T] QueryPlan::add_excluded(
   self : QueryPlan,
   key : ComponentKey[T],
 ) -> QueryPlan raise ECSError {
+  self.with_key_appended(key, false)
+}
+
+///|
+/// Returns a new plan with `key` appended to the required or excluded
+/// constraint list, applying the foreign-key, contradiction, and
+/// idempotency checks. Shared by add_required and add_excluded.
+fn[T] QueryPlan::with_key_appended(
+  self : QueryPlan,
+  key : ComponentKey[T],
+  to_required : Bool,
+) -> QueryPlan raise ECSError {
+  let (own, other) = if to_required {
+    (self.required, self.excluded)
+  } else {
+    (self.excluded, self.required)
+  }
   if key.world.world_id != self.world.world_id {
     raise ECSError::ForeignComponentKey
   }
   let slot = key.id.slot_index
-  // Contradiction: key already required
-  if self.contains_slot(self.required, slot) {
+  // Contradiction: key already in the other list
+  if self.contains_slot(other, slot) {
     raise ECSError::ContradictoryQuery
   }
-  // Idempotency: same slot already excluded
-  if self.contains_slot(self.excluded, slot) {
+  // Idempotency: same slot already in the own list
+  if self.contains_slot(own, slot) {
     self
   } else {
     let pool = key.world.erased_pools[slot]
@@ -121,15 +110,23 @@ pub fn[T] QueryPlan::add_excluded(
       dense: (pool.dense)(),
       check: pool.contains_entity,
     }
-    let new_excluded : Array[Constraint] = []
-    for i in 0..<self.excluded.length() {
-      new_excluded.push(self.excluded[i])
+    let new_own : Array[Constraint] = []
+    for i in 0..<own.length() {
+      new_own.push(own[i])
     }
-    new_excluded.push(new_constraint)
-    QueryPlan::{
-      world: self.world,
-      required: self.required,
-      excluded: new_excluded,
+    new_own.push(new_constraint)
+    if to_required {
+      QueryPlan::{
+        world: self.world,
+        required: new_own,
+        excluded: self.excluded,
+      }
+    } else {
+      QueryPlan::{
+        world: self.world,
+        required: self.required,
+        excluded: new_own,
+      }
     }
   }
 }
