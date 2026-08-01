@@ -57,14 +57,17 @@ pub fn World::spawn(self : World) -> Entity raise ECSError {
   let (idx, gen) = if self.free.length() > 0 {
     // Reuse a despawned slot
     let i = self.free[self.free.length() - 1]
-    ignore(self.free.remove(self.free.length() - 1))
     let next_gen = self.gens[i] + 1
-    // Generation exhaustion: if incrementing would overflow, the slot
-    // is permanently retired. For a 64-bit Int this is practically
+    // Generation exhaustion: if incrementing would overflow, retire the
+    // slot (it can never be reused) and report the exhausted allocator.
+    // The check precedes the pop, so an available slot is never lost to
+    // a failed reuse. For an Int generation counter this is practically
     // unreachable, but the check preserves the specified contract.
     if next_gen < self.gens[i] {
+      ignore(self.free.remove(self.free.length() - 1))
       raise ECSError::EntityCapacityExhausted
     }
+    ignore(self.free.remove(self.free.length() - 1))
     self.gens[i] = next_gen
     (i, next_gen)
   } else {
@@ -88,12 +91,18 @@ pub fn World::despawn(self : World, entity : Entity) -> Unit raise ECSError {
   // Validate first so invalid handles raise Stale/Foreign even during a query
   self.ensure_alive(entity)
   self.ensure_no_active_query()
+  // Generation exhaustion: check before mutating any state, so a raise
+  // leaves the World untouched and the Entity still live
+  let next_gen = self.gens[entity.index] + 1
+  if next_gen < self.gens[entity.index] {
+    raise ECSError::EntityCapacityExhausted
+  }
   // Remove entity from every registered Component Slot
   for i in 0..<self.erased_pools.length() {
     (self.erased_pools[i].remove_entity)(entity)
   }
   // Increment generation to invalidate the stale handle
-  self.gens[entity.index] = self.gens[entity.index] + 1
+  self.gens[entity.index] = next_gen
   self.free.push(entity.index)
   self.live_count = self.live_count - 1
 }
@@ -131,6 +140,14 @@ pub fn World::is_alive(self : World, entity : Entity) -> Bool {
 /// permanently stale.
 pub fn World::clear(self : World) -> Unit raise ECSError {
   self.ensure_no_active_query()
+  // Generation exhaustion: verify every slot can advance before mutating
+  // any state, so a raise leaves the World untouched
+  for i in 0..<self.gens.length() {
+    let next = self.gens[i] + 1
+    if next < self.gens[i] {
+      raise ECSError::EntityCapacityExhausted
+    }
+  }
   // Clear every registered Component Slot
   for i in 0..<self.erased_pools.length() {
     (self.erased_pools[i].clear_all)()
