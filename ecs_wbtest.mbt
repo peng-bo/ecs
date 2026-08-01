@@ -136,6 +136,59 @@ test "erased pool exposes dense entity array" {
 }
 
 ///|
+test "spawn raises EntityCapacityExhausted when reuse would overflow" {
+  let w = World::new()
+  w.gens.push(2147483647) // slot 0 at max generation
+  w.free.push(0)
+  try World::spawn(w) catch {
+    ECSError::EntityCapacityExhausted =>
+      inspect("exhausted", content="exhausted")
+    _ => fail("expected EntityCapacityExhausted")
+  } noraise {
+    _ => fail("expected EntityCapacityExhausted")
+  }
+  // The exhausted slot is retired — removed from the free list
+  inspect(w.free.length(), content="0")
+}
+
+///|
+test "despawn raises EntityCapacityExhausted without mutating state" {
+  let w = World::new()
+  w.gens.push(2147483647) // slot 0 at max generation
+  let e = Entity::{ index: 0, generation: 2147483647, world_id: w.world_id }
+  try World::despawn(w, e) catch {
+    ECSError::EntityCapacityExhausted =>
+      inspect("exhausted", content="exhausted")
+    _ => fail("expected EntityCapacityExhausted")
+  } noraise {
+    _ => fail("expected EntityCapacityExhausted")
+  }
+  // Zero state change: generation untouched, slot not freed, count intact
+  inspect(w.gens[0] == 2147483647, content="true")
+  inspect(w.free.length(), content="0")
+  inspect(w.live_count, content="0")
+}
+
+///|
+test "clear raises EntityCapacityExhausted without mutating state" {
+  let w = World::new()
+  w.gens.push(2147483647) // slot 0 at max generation
+  let e = Entity::{ index: 0, generation: 2147483647, world_id: w.world_id }
+  let k : ComponentKey[Int] = World::register(w)
+  ignore(k.set(e, 10))
+  try World::clear(w) catch {
+    ECSError::EntityCapacityExhausted =>
+      inspect("exhausted", content="exhausted")
+    _ => fail("expected EntityCapacityExhausted")
+  } noraise {
+    _ => fail("expected EntityCapacityExhausted")
+  }
+  // Zero state change: components untouched, generation unchanged
+  inspect(k.dense_entities.length(), content="1")
+  inspect(w.gens[0] == 2147483647, content="true")
+}
+
+///|
 test "erased pool dense tracks removals" {
   let w = World::new()
   let e0 = World::spawn(w)
