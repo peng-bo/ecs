@@ -155,7 +155,7 @@ test "set on absent entity returns None" {
   let w = @ecs.World::new()
   let e = @ecs.World::spawn(w)
   let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
-  inspect(@ecs.ComponentKey::set(k, e, 42), content="None")
+  debug_inspect(@ecs.ComponentKey::set(k, e, 42), content="None")
   inspect(@ecs.ComponentKey::len(k), content="1")
   inspect(@ecs.ComponentKey::is_empty(k), content="false")
 }
@@ -166,7 +166,7 @@ test "set on present entity returns previous value" {
   let e = @ecs.World::spawn(w)
   let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
   ignore(@ecs.ComponentKey::set(k, e, 10))
-  inspect(@ecs.ComponentKey::set(k, e, 20), content="Some(10)")
+  debug_inspect(@ecs.ComponentKey::set(k, e, 20), content="Some(10)")
   inspect(@ecs.ComponentKey::len(k), content="1")
 }
 
@@ -175,9 +175,9 @@ test "get returns None for absent, Some for present" {
   let w = @ecs.World::new()
   let e = @ecs.World::spawn(w)
   let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
-  inspect(@ecs.ComponentKey::get(k, e), content="None")
+  debug_inspect(@ecs.ComponentKey::get(k, e), content="None")
   ignore(@ecs.ComponentKey::set(k, e, 7))
-  inspect(@ecs.ComponentKey::get(k, e), content="Some(7)")
+  debug_inspect(@ecs.ComponentKey::get(k, e), content="Some(7)")
 }
 
 ///|
@@ -269,11 +269,16 @@ test "arbitrary payload types work without extra trait bounds" {
   // String payload
   let ks : @ecs.ComponentKey[String] = @ecs.World::register(w)
   ignore(@ecs.ComponentKey::set(ks, e, "hello"))
-  inspect(@ecs.ComponentKey::get(ks, e), content="Some(hello)")
+  debug_inspect(
+    @ecs.ComponentKey::get(ks, e),
+    content=(
+      #|Some("hello")
+    ),
+  )
   // Double payload
   let kd : @ecs.ComponentKey[Double] = @ecs.World::register(w)
   ignore(@ecs.ComponentKey::set(kd, e, 3.14))
-  inspect(@ecs.ComponentKey::get(kd, e), content="Some(3.14)")
+  debug_inspect(@ecs.ComponentKey::get(kd, e), content="Some(3.14)")
 }
 
 ///|
@@ -284,8 +289,8 @@ test "multiple entities can hold components independently" {
   let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
   ignore(@ecs.ComponentKey::set(k, e1, 100))
   ignore(@ecs.ComponentKey::set(k, e2, 200))
-  inspect(@ecs.ComponentKey::get(k, e1), content="Some(100)")
-  inspect(@ecs.ComponentKey::get(k, e2), content="Some(200)")
+  debug_inspect(@ecs.ComponentKey::get(k, e1), content="Some(100)")
+  debug_inspect(@ecs.ComponentKey::get(k, e2), content="Some(200)")
   inspect(@ecs.ComponentKey::len(k), content="2")
 }
 
@@ -297,7 +302,7 @@ test "remove present component returns payload" {
   let e = @ecs.World::spawn(w)
   let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
   ignore(@ecs.ComponentKey::set(k, e, 42))
-  inspect(@ecs.ComponentKey::remove(k, e), content="Some(42)")
+  debug_inspect(@ecs.ComponentKey::remove(k, e), content="Some(42)")
   inspect(@ecs.ComponentKey::len(k), content="0")
   inspect(@ecs.ComponentKey::contains(k, e), content="false")
 }
@@ -307,7 +312,7 @@ test "remove absent component returns None" {
   let w = @ecs.World::new()
   let e = @ecs.World::spawn(w)
   let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
-  inspect(@ecs.ComponentKey::remove(k, e), content="None")
+  debug_inspect(@ecs.ComponentKey::remove(k, e), content="None")
   inspect(@ecs.ComponentKey::len(k), content="0")
 }
 
@@ -352,8 +357,8 @@ test "remove preserves other entities' components" {
   ignore(@ecs.ComponentKey::set(k, e3, 300))
   ignore(@ecs.ComponentKey::remove(k, e2))
   inspect(@ecs.ComponentKey::len(k), content="2")
-  inspect(@ecs.ComponentKey::get(k, e1), content="Some(100)")
-  inspect(@ecs.ComponentKey::get(k, e3), content="Some(300)")
+  debug_inspect(@ecs.ComponentKey::get(k, e1), content="Some(100)")
+  debug_inspect(@ecs.ComponentKey::get(k, e3), content="Some(300)")
   inspect(@ecs.ComponentKey::contains(k, e2), content="false")
 }
 
@@ -388,8 +393,8 @@ test "same-type slots have independent storage" {
   let k_tgt : @ecs.ComponentKey[Int] = @ecs.World::register(w) // target position
   ignore(@ecs.ComponentKey::set(k_pos, e, 10))
   ignore(@ecs.ComponentKey::set(k_tgt, e, 20))
-  inspect(@ecs.ComponentKey::get(k_pos, e), content="Some(10)")
-  inspect(@ecs.ComponentKey::get(k_tgt, e), content="Some(20)")
+  debug_inspect(@ecs.ComponentKey::get(k_pos, e), content="Some(10)")
+  debug_inspect(@ecs.ComponentKey::get(k_tgt, e), content="Some(20)")
   inspect(@ecs.ComponentKey::len(k_pos), content="1")
   inspect(@ecs.ComponentKey::len(k_tgt), content="1")
 }
@@ -405,7 +410,7 @@ test "removing from one same-type slot does not affect the other" {
   ignore(@ecs.ComponentKey::remove(k1, e))
   inspect(@ecs.ComponentKey::contains(k1, e), content="false")
   inspect(@ecs.ComponentKey::contains(k2, e), content="true")
-  inspect(@ecs.ComponentKey::get(k2, e), content="Some(200)")
+  debug_inspect(@ecs.ComponentKey::get(k2, e), content="Some(200)")
 }
 
 ///|
@@ -458,7 +463,7 @@ test "despawn leaves other entities' components untouched" {
   ignore(@ecs.ComponentKey::set(k, e2, 200))
   @ecs.World::despawn(w, e1)
   inspect(@ecs.ComponentKey::len(k), content="1")
-  inspect(@ecs.ComponentKey::get(k, e2), content="Some(200)")
+  debug_inspect(@ecs.ComponentKey::get(k, e2), content="Some(200)")
   // e1 is stale — contains raises StaleEntity (spec: consistent error semantics)
   try @ecs.ComponentKey::contains(k, e1) catch {
     ECSError::StaleEntity =>
@@ -503,7 +508,7 @@ test "after clear existing keys remain valid for reuse" {
   @ecs.World::clear(w)
   let e2 = @ecs.World::spawn(w)
   ignore(@ecs.ComponentKey::set(k, e2, 99))
-  inspect(@ecs.ComponentKey::get(k, e2), content="Some(99)")
+  debug_inspect(@ecs.ComponentKey::get(k, e2), content="Some(99)")
   inspect(@ecs.ComponentKey::len(k), content="1")
 }
 
@@ -607,7 +612,7 @@ test "callback error propagates and allows later operations" {
   }
   // After error, operations still work
   ignore(@ecs.ComponentKey::set(k, e, 99))
-  inspect(@ecs.ComponentKey::get(k, e), content="Some(99)")
+  debug_inspect(@ecs.ComponentKey::get(k, e), content="Some(99)")
 }
 
 ///|
@@ -874,7 +879,7 @@ test "replacing existing payload during query is allowed" {
   @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
     ignore(@ecs.ComponentKey::set(k, e, 99))
   })
-  inspect(@ecs.ComponentKey::get(k, e), content="Some(99)")
+  debug_inspect(@ecs.ComponentKey::get(k, e), content="Some(99)")
 }
 
 ///|
@@ -1104,5 +1109,5 @@ test "query guard restored after callback error" {
   // After error, operations work normally — guard was restored
   inspect(@ecs.World::len(w), content="1")
   ignore(@ecs.ComponentKey::set(k, e, 99))
-  inspect(@ecs.ComponentKey::get(k, e), content="Some(99)")
+  debug_inspect(@ecs.ComponentKey::get(k, e), content="Some(99)")
 }
