@@ -57,7 +57,7 @@ pub struct QueryPlan {
 }
 pub fn[T] QueryPlan::add_excluded(Self, ComponentKey[T]) -> Self raise ECSError
 pub fn[T] QueryPlan::add_required(Self, ComponentKey[T]) -> Self raise ECSError
-pub fn QueryPlan::each(Self, (Entity) -> Unit raise ECSError) -> Unit raise ECSError
+pub fn QueryPlan::each(Self, (Entity) -> Unit raise?) -> Unit raise?
 
 pub struct World {
   gens : Array[Int]

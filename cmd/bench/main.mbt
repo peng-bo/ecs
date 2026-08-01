@@ -195,9 +195,7 @@ fn bench_smallest_driver(n : Int, m : Int) -> Unit raise {
   let plan = @ecs.World::query(w, k_big)
   let plan = @ecs.QueryPlan::add_required(plan, k_small)
   let mut matched = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise @ecs.ECSError {
-    matched = matched + 1
-  })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { matched = matched + 1 })
   // k_small (m entries) should be chosen as driver, limiting matched to m
   inspect_count("smallest_driver_matches", m, matched, m)
 }
@@ -241,9 +239,7 @@ fn bench_multi_required(n : Int) -> Unit raise {
       plan
     }
     let mut matched = 0
-    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise @ecs.ECSError {
-      matched = matched + 1
-    })
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit { matched = matched + 1 })
     let expected = if required == 1 {
       n_a + n_b + n_c
     } else if required == 2 {
@@ -280,17 +276,17 @@ fn bench_excluded_selectivity(n : Int) -> Unit raise {
   // 0 excluded: all n entities
   let plan0 = @ecs.World::query(w, k_req)
   let mut m0 = 0
-  @ecs.QueryPlan::each(plan0, fn(_e) -> Unit raise @ecs.ECSError { m0 = m0 + 1 })
+  @ecs.QueryPlan::each(plan0, fn(_e) -> Unit { m0 = m0 + 1 })
   inspect_count("0_excluded", n, m0, n)
   // 1 excluded: ~75% pass
   let plan1 = @ecs.QueryPlan::add_excluded(plan0, k_ex1)
   let mut m1 = 0
-  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit raise @ecs.ECSError { m1 = m1 + 1 })
+  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit { m1 = m1 + 1 })
   inspect_count("1_excluded", n - ex1_count, m1, n - ex1_count)
   // 2 excluded: ~65% pass
   let plan2 = @ecs.QueryPlan::add_excluded(plan1, k_ex2)
   let mut m2 = 0
-  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise @ecs.ECSError { m2 = m2 + 1 })
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit { m2 = m2 + 1 })
   inspect_count("2_excluded", n - ex1_count, m2, n - ex1_count)
 }
 
@@ -301,7 +297,7 @@ fn bench_plan_reuse(n : Int) -> Unit raise {
   let plan = @ecs.World::query(w, k)
   // First run: empty
   let mut c0 = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise @ecs.ECSError { c0 = c0 + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { c0 = c0 + 1 })
   inspect_count("reuse_empty", 0, c0, 0)
   // Populate
   let es : Array[@ecs.Entity] = []
@@ -312,7 +308,7 @@ fn bench_plan_reuse(n : Int) -> Unit raise {
   }
   // Second run with same plan: sees new entities
   let mut c1 = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise @ecs.ECSError { c1 = c1 + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { c1 = c1 + 1 })
   inspect_count("reuse_after_populate", n, c1, n)
   // Despawn half (outside query — mutation during each is forbidden)
   let half = n / 2
@@ -321,7 +317,7 @@ fn bench_plan_reuse(n : Int) -> Unit raise {
   }
   // Third run: sees remaining entities
   let mut c2 = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise @ecs.ECSError { c2 = c2 + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { c2 = c2 + 1 })
   inspect_count("reuse_after_despawn", n - n / 2, c2, n - n / 2)
 }
 
