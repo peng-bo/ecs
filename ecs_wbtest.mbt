@@ -317,3 +317,42 @@ test "component key constructor initializes empty storage" {
   inspect(k.dense_entities.length(), content="0")
   inspect(k.dense_payloads.length(), content="0")
 }
+
+// --- #58: query driver selection strategy ---
+
+///|
+test "driver index picks the smallest required pool" {
+  let w = World::new()
+  let k_a : ComponentKey[Int] = World::register(w)
+  let k_b : ComponentKey[Int] = World::register(w)
+  // k_a holds more entities than k_b
+  for _ in 0..<5 {
+    let e = World::spawn(w)
+    ignore(k_a.set(e, 1))
+  }
+  let e_small = World::spawn(w)
+  ignore(k_a.set(e_small, 1))
+  ignore(k_b.set(e_small, 2))
+  let plan = World::query(w, k_a)
+  let plan = QueryPlan::add_required(plan, k_b)
+  // k_b (1 entry) is smaller than k_a (6 entries)
+  inspect(plan.driver_index(), content="1")
+}
+
+///|
+test "driver index re-selects when pool sizes change" {
+  let w = World::new()
+  let k_a : ComponentKey[Int] = World::register(w)
+  let k_b : ComponentKey[Int] = World::register(w)
+  let e1 = World::spawn(w)
+  ignore(k_a.set(e1, 1))
+  ignore(k_b.set(e1, 2))
+  let plan = World::query(w, k_a)
+  let plan = QueryPlan::add_required(plan, k_b)
+  // Equal sizes: the first required pool wins
+  inspect(plan.driver_index(), content="0")
+  // Grow k_a: k_b becomes the driver
+  let e2 = World::spawn(w)
+  ignore(k_a.set(e2, 1))
+  inspect(plan.driver_index(), content="1")
+}

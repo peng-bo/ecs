@@ -136,15 +136,8 @@ pub fn QueryPlan::each(
 ) -> Unit raise? {
   self.world.query_depth = self.world.query_depth + 1
   // Select the smallest required pool as the driver
-  let mut driver_idx = 0
-  let mut best = self.required[0]
-  for i in 1..<self.required.length() {
-    if self.required[i].dense.length() < best.dense.length() {
-      best = self.required[i]
-      driver_idx = i
-    }
-  }
-  let driver = best.dense
+  let driver_idx = self.driver_index()
+  let driver = self.required[driver_idx].dense
   let mut i = 0
   let n = driver.length()
   while i < n {
@@ -160,6 +153,24 @@ pub fn QueryPlan::each(
     i = i + 1
   }
   self.world.query_depth = self.world.query_depth - 1
+}
+
+///|
+/// Returns the index of the smallest required pool, chosen as the driver
+/// for the next execution. Re-selected on every execution so the plan
+/// observes current World state (ADR-0002). The driver's own membership
+/// is implied by its dense array, so `matches_all` skips it.
+fn QueryPlan::driver_index(self : QueryPlan) -> Int {
+  let mut driver_idx = 0
+  let mut best_len = self.required[0].dense.length()
+  for i in 1..<self.required.length() {
+    let len = self.required[i].dense.length()
+    if len < best_len {
+      best_len = len
+      driver_idx = i
+    }
+  }
+  driver_idx
 }
 
 ///|
