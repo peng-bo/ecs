@@ -151,8 +151,10 @@ pub fn[T] ComponentKey::set(
     self.dense_payloads[dense_idx] = value
     Some(old)
   } else {
-    // First insertion is structural — reject during query
-    self.world.ensure_no_active_query()
+    // First insertion is structural — the unified prologue rejects it
+    // during query. Validation is idempotent (already ran above), which
+    // keeps the validate-before-guard precedence.
+    self.world.ensure_structural_mutation_ready(entity~)
     let new_idx = self.dense_entities.length()
     self.sparse[entity.index] = new_idx
     self.dense_entities.push(entity)
@@ -170,9 +172,9 @@ pub fn[T] ComponentKey::remove(
   self : ComponentKey[T],
   entity : Entity,
 ) -> T? raise ECSError {
-  // Validate first so invalid handles raise Stale/Foreign even during a query
-  self.validate_entity(entity)
-  self.world.ensure_no_active_query()
+  // Unified prologue: validate first (Stale/Foreign even during a query),
+  // then the structural guard
+  self.world.ensure_structural_mutation_ready(entity~)
   // The swap-remove logic lives in remove_entity — the single implementation
   self.remove_entity(entity)
 }
@@ -181,7 +183,7 @@ pub fn[T] ComponentKey::remove(
 /// Clears every Component from this slot without despawning any Entity.
 /// After clear, the slot is empty and its length reports zero.
 pub fn[T] ComponentKey::clear(self : ComponentKey[T]) -> Unit raise ECSError {
-  self.world.ensure_no_active_query()
+  self.world.ensure_structural_mutation_ready()
   for i in 0..<self.dense_entities.length() {
     self.sparse[self.dense_entities[i].index] = -1
   }
