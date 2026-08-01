@@ -28,6 +28,21 @@ pub struct QueryPlan {
   excluded : Array[Constraint]
 }
 
+///|
+/// Builds a Constraint from a ComponentKey: the slot identity, its dense
+/// Entity array, and the erased membership check. The slot is located via
+/// the key, but the view is built from the erased pool — never key-owned
+/// data. Shared by query construction and constraint appending.
+fn[T] Constraint::from_key(key : ComponentKey[T]) -> Constraint {
+  let slot = key.id.slot_index
+  let pool = key.world.erased_pools[slot]
+  Constraint::{
+    slot_index: slot,
+    dense: (pool.dense)(),
+    check: pool.contains_entity,
+  }
+}
+
 // --- Query construction ---
 
 ///|
@@ -40,15 +55,8 @@ pub fn[T] World::query(
   if key.world.world_id != self.world_id {
     raise ECSError::ForeignComponentKey
   }
-  // Constraint built from the erased pool — never key internals
-  let pool = self.erased_pools[key.id.slot_index]
-  let required : Array[Constraint] = [
-    Constraint::{
-      slot_index: key.id.slot_index,
-      dense: (pool.dense)(),
-      check: pool.contains_entity,
-    },
-  ]
+  // Constraint built from the erased pool via the shared constructor
+  let required : Array[Constraint] = [Constraint::from_key(key)]
   let excluded : Array[Constraint] = []
   QueryPlan::{ world: self, required, excluded }
 }
@@ -104,12 +112,7 @@ fn[T] QueryPlan::with_key_appended(
   if contains_slot(own, slot) {
     self
   } else {
-    let pool = key.world.erased_pools[slot]
-    let new_constraint = Constraint::{
-      slot_index: slot,
-      dense: (pool.dense)(),
-      check: pool.contains_entity,
-    }
+    let new_constraint = Constraint::from_key(key)
     let new_own : Array[Constraint] = []
     for i in 0..<own.length() {
       new_own.push(own[i])

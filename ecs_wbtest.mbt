@@ -189,6 +189,24 @@ test "clear raises EntityCapacityExhausted without mutating state" {
 }
 
 ///|
+test "constraint from key mirrors slot state" {
+  let w = World::new()
+  let e0 = World::spawn(w)
+  let e1 = World::spawn(w)
+  let k : ComponentKey[Int] = World::register(w)
+  ignore(k.set(e0, 10))
+  let c = Constraint::from_key(k)
+  // Slot identity comes from the key
+  inspect(c.slot_index, content="0")
+  // Dense view mirrors the pool's dense array
+  inspect(c.dense.length(), content="1")
+  inspect(c.dense[0] == e0, content="true")
+  // Membership check matches slot state
+  inspect((c.check)(e0), content="true")
+  inspect((c.check)(e1), content="false")
+}
+
+///|
 test "erased pool dense tracks removals" {
   let w = World::new()
   let e0 = World::spawn(w)
