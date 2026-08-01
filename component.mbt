@@ -21,6 +21,14 @@ pub struct ComponentKey[T] {
   dense_payloads : Array[T]
 }
 
+///|
+/// Private constructor — World::register is the only production caller.
+/// Keeps the ComponentKey's internal storage layout owned by ComponentKey
+/// itself.
+fn[T] ComponentKey::new(id : ComponentID, world : World) -> ComponentKey[T] {
+  { id, world, sparse: [], dense_entities: [], dense_payloads: [] }
+}
+
 // --- Public accessors ---
 
 ///|

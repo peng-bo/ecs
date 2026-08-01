@@ -1,13 +1,3 @@
-// --- Erased pool (private, type-erased lifecycle operations) ---
-
-///|
-struct ErasedPool {
-  remove_entity : (Entity) -> Unit
-  clear_all : () -> Unit raise ECSError
-  contains_entity : (Entity) -> Bool
-  dense : () -> Array[Entity]
-}
-
 // --- Query Plan ---
 
 ///|

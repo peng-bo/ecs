@@ -301,3 +301,19 @@ test "erased pool dense tracks removals" {
   inspect(dense.length(), content="1")
   inspect(dense[0] == e1, content="true")
 }
+
+// --- #56: ComponentKey owns its own construction ---
+
+///|
+test "component key constructor initializes empty storage" {
+  let w = World::new()
+  let id = ComponentID::{ world_id: w.world_id, slot_index: 3 }
+  let k : ComponentKey[Int] = ComponentKey::new(id, w)
+  // Identity and World provenance come from the arguments
+  inspect(k.id == id, content="true")
+  inspect(k.world.world_id == w.world_id, content="true")
+  // Storage starts empty — ready for first insertion
+  inspect(k.sparse.length(), content="0")
+  inspect(k.dense_entities.length(), content="0")
+  inspect(k.dense_payloads.length(), content="0")
+}
