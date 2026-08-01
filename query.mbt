@@ -97,11 +97,11 @@ fn[T] QueryPlan::with_key_appended(
   }
   let slot = key.id.slot_index
   // Contradiction: key already in the other list
-  if self.contains_slot(other, slot) {
+  if contains_slot(other, slot) {
     raise ECSError::ContradictoryQuery
   }
   // Idempotency: same slot already in the own list
-  if self.contains_slot(own, slot) {
+  if contains_slot(own, slot) {
     self
   } else {
     let pool = key.world.erased_pools[slot]
@@ -201,11 +201,7 @@ fn QueryPlan::matches_all(
 }
 
 ///|
-fn QueryPlan::contains_slot(
-  self : QueryPlan,
-  constraints : Array[Constraint],
-  slot : Int,
-) -> Bool {
+fn contains_slot(constraints : Array[Constraint], slot : Int) -> Bool {
   let mut found = false
   for i in 0..<constraints.length() {
     if constraints[i].slot_index == slot {

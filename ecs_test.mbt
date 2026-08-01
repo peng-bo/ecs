@@ -540,14 +540,14 @@ test "query visits all entities with matching component" {
   let w = @ecs.World::new()
   let e1 = @ecs.World::spawn(w)
   let e2 = @ecs.World::spawn(w)
-  let e3 = @ecs.World::spawn(w)
+  let _e3 = @ecs.World::spawn(w)
   let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
   ignore(@ecs.ComponentKey::set(k, e1, 1))
   ignore(@ecs.ComponentKey::set(k, e2, 2))
   // e3 has no component — should not appear in query
   let plan = @ecs.World::query(w, k)
   let mut count = 0
-  @ecs.QueryPlan::each(plan, fn(e : @ecs.Entity) -> Unit { count = count + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e : @ecs.Entity) -> Unit { count = count + 1 })
   inspect(count, content="2")
 }
 
@@ -659,7 +659,7 @@ test "multi-required query matches entities with all components" {
   let w = @ecs.World::new()
   let e1 = @ecs.World::spawn(w)
   let e2 = @ecs.World::spawn(w)
-  let e3 = @ecs.World::spawn(w)
+  let _e3 = @ecs.World::spawn(w)
   let k_i : @ecs.ComponentKey[Int] = @ecs.World::register(w)
   let k_s : @ecs.ComponentKey[String] = @ecs.World::register(w)
   // e1: both, e2: Int only, e3: neither
