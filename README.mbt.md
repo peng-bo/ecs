@@ -34,8 +34,8 @@ test "two same-type component slots" {
 
   ignore(@ecs.ComponentKey::set(pos, e, 10))
   ignore(@ecs.ComponentKey::set(tgt, e, 20))
-  inspect(@ecs.ComponentKey::get(pos, e), content="Some(10)")
-  inspect(@ecs.ComponentKey::get(tgt, e), content="Some(20)")
+  debug_inspect(@ecs.ComponentKey::get(pos, e), content="Some(10)")
+  debug_inspect(@ecs.ComponentKey::get(tgt, e), content="Some(20)")
 }
 
 ///|
@@ -45,10 +45,10 @@ test "set replacement and removal" {
   let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
 
   ignore(@ecs.ComponentKey::set(k, e, 10))
-  inspect(@ecs.ComponentKey::set(k, e, 99), content="Some(10)")
+  debug_inspect(@ecs.ComponentKey::set(k, e, 99), content="Some(10)")
   inspect(@ecs.ComponentKey::len(k), content="1")
 
-  inspect(@ecs.ComponentKey::remove(k, e), content="Some(99)")
+  debug_inspect(@ecs.ComponentKey::remove(k, e), content="Some(99)")
   inspect(@ecs.ComponentKey::contains(k, e), content="false")
   inspect(@ecs.ComponentKey::len(k), content="0")
 }
@@ -82,7 +82,7 @@ test "world clear preserves keys" {
 
   let e2 = @ecs.World::spawn(w)
   ignore(@ecs.ComponentKey::set(k, e2, 7))
-  inspect(@ecs.ComponentKey::get(k, e2), content="Some(7)")
+  debug_inspect(@ecs.ComponentKey::get(k, e2), content="Some(7)")
 }
 ```
 
@@ -159,7 +159,7 @@ test "payload replacement during query is allowed" {
   @ecs.QueryPlan::each(plan, fn(entity) -> Unit raise ECSError {
     ignore(@ecs.ComponentKey::set(k, entity, 999))
   })
-  inspect(@ecs.ComponentKey::get(k, e), content="Some(999)")
+  debug_inspect(@ecs.ComponentKey::get(k, e), content="Some(999)")
 }
 ```
 
