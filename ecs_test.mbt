@@ -1005,6 +1005,90 @@ test "register during query is rejected" {
 }
 
 ///|
+test "remove stale entity during query raises StaleEntity" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e1, 1))
+  let e2 = @ecs.World::spawn(w)
+  @ecs.World::despawn(w, e2) // e2 is stale but not in the driver pool
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      ignore(@ecs.ComponentKey::remove(k, e2))
+    })
+  catch {
+    ECSError::StaleEntity => inspect("stale", content="stale")
+    _ => fail("expected StaleEntity, not StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StaleEntity, not StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "remove foreign entity during query raises ForeignEntity" {
+  let w1 = @ecs.World::new()
+  let w2 = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w1)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w1)
+  ignore(@ecs.ComponentKey::set(k, e1, 1))
+  let e_foreign = @ecs.World::spawn(w2)
+  let plan = @ecs.World::query(w1, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      ignore(@ecs.ComponentKey::remove(k, e_foreign))
+    })
+  catch {
+    ECSError::ForeignEntity => inspect("foreign", content="foreign")
+    _ => fail("expected ForeignEntity, not StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected ForeignEntity, not StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "despawn stale entity during query raises StaleEntity" {
+  let w = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
+  ignore(@ecs.ComponentKey::set(k, e1, 1))
+  let e2 = @ecs.World::spawn(w)
+  @ecs.World::despawn(w, e2) // e2 is stale but not in the driver pool
+  let plan = @ecs.World::query(w, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      @ecs.World::despawn(w, e2)
+    })
+  catch {
+    ECSError::StaleEntity => inspect("stale", content="stale")
+    _ => fail("expected StaleEntity, not StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StaleEntity, not StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "despawn foreign entity during query raises ForeignEntity" {
+  let w1 = @ecs.World::new()
+  let w2 = @ecs.World::new()
+  let e1 = @ecs.World::spawn(w1)
+  let k : @ecs.ComponentKey[Int] = @ecs.World::register(w1)
+  ignore(@ecs.ComponentKey::set(k, e1, 1))
+  let e_foreign = @ecs.World::spawn(w2)
+  let plan = @ecs.World::query(w1, k)
+  try
+    @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+      @ecs.World::despawn(w1, e_foreign)
+    })
+  catch {
+    ECSError::ForeignEntity => inspect("foreign", content="foreign")
+    _ => fail("expected ForeignEntity, not StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected ForeignEntity, not StructuralMutationDuringQuery")
+  }
+}
+
+///|
 test "query guard restored after callback error" {
   let w = @ecs.World::new()
   let e = @ecs.World::spawn(w)

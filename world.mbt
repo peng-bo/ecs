@@ -85,8 +85,9 @@ pub fn World::spawn(self : World) -> Entity raise ECSError {
 /// Raises `ForeignEntity` if the Entity belongs to a different World.
 /// Raises `StaleEntity` if the Entity is already dead.
 pub fn World::despawn(self : World, entity : Entity) -> Unit raise ECSError {
-  self.ensure_no_active_query()
+  // Validate first so invalid handles raise Stale/Foreign even during a query
   self.ensure_alive(entity)
+  self.ensure_no_active_query()
   // Remove entity from every registered Component Slot
   for i in 0..<self.erased_pools.length() {
     (self.erased_pools[i].remove_entity)(entity)

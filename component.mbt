@@ -170,8 +170,9 @@ pub fn[T] ComponentKey::remove(
   self : ComponentKey[T],
   entity : Entity,
 ) -> T? raise ECSError {
-  self.world.ensure_no_active_query()
+  // Validate first so invalid handles raise Stale/Foreign even during a query
   self.validate_entity(entity)
+  self.world.ensure_no_active_query()
   let dense_idx = self.sparse_lookup(entity)
   if dense_idx < 0 {
     None
