@@ -1,0 +1,6 @@
+# Normalize all text files to LF in the repository.
+# `text=auto` makes git's EOL handling explicit, which fixes the
+# racy stat-cache ghost modifications seen on Windows with
+# core.autocrlf=true and no .gitattributes (files showing as
+# modified after every checkout although their content is unchanged).
+* text=auto
