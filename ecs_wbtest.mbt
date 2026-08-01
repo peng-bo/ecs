@@ -188,6 +188,88 @@ test "clear raises EntityCapacityExhausted without mutating state" {
   inspect(w.gens[0] == 2147483647, content="true")
 }
 
+// --- #55: unified structural-mutation prologue ---
+
+///|
+test "prologue validates entity before guarding during query" {
+  let w = World::new()
+  let e = World::spawn(w)
+  World::despawn(w, e)
+  w.query_depth = 1
+  // Stale entity wins over the active-query guard (error precedence)
+  try w.ensure_structural_mutation_ready(entity=e) catch {
+    ECSError::StaleEntity => inspect("stale first", content="stale first")
+    _ => fail("expected StaleEntity, not StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StaleEntity, not StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "prologue guards structural mutation during query" {
+  let w = World::new()
+  let e = World::spawn(w)
+  w.query_depth = 1
+  try w.ensure_structural_mutation_ready(entity=e) catch {
+    ECSError::StructuralMutationDuringQuery =>
+      inspect("guarded", content="guarded")
+    _ => fail("expected StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StructuralMutationDuringQuery")
+  }
+  // Guard-only path (no entity) also rejects during query
+  try w.ensure_structural_mutation_ready() catch {
+    ECSError::StructuralMutationDuringQuery =>
+      inspect("guarded", content="guarded")
+    _ => fail("expected StructuralMutationDuringQuery")
+  } noraise {
+    _ => fail("expected StructuralMutationDuringQuery")
+  }
+}
+
+///|
+test "prologue passes when idle" {
+  let w = World::new()
+  let e = World::spawn(w)
+  w.ensure_structural_mutation_ready(entity=e)
+  w.ensure_structural_mutation_ready()
+  inspect("ready", content="ready")
+}
+
+// --- #55: unified generation advancement ---
+
+///|
+test "advance_generation advances and returns the new generation" {
+  let w = World::new()
+  w.gens.push(1)
+  let next = w.advance_generation(0)
+  inspect(next, content="2")
+  inspect(w.gens[0], content="2")
+}
+
+///|
+test "advance_generation raises without mutating on overflow" {
+  let w = World::new()
+  w.gens.push(2147483647) // slot 0 at max generation
+  try w.advance_generation(0) catch {
+    ECSError::EntityCapacityExhausted =>
+      inspect("exhausted", content="exhausted")
+    _ => fail("expected EntityCapacityExhausted")
+  } noraise {
+    _ => fail("expected EntityCapacityExhausted")
+  }
+  inspect(w.gens[0] == 2147483647, content="true")
+}
+
+///|
+test "generation_can_advance reflects overflow risk" {
+  let w = World::new()
+  w.gens.push(2147483647) // slot 0 at max generation
+  w.gens.push(1)
+  inspect(w.generation_can_advance(0), content="false")
+  inspect(w.generation_can_advance(1), content="true")
+}
+
 ///|
 test "erased pool dense tracks removals" {
   let w = World::new()
