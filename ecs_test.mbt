@@ -542,9 +542,7 @@ test "query visits all entities with matching component" {
   // e3 has no component — should not appear in query
   let plan = @ecs.World::query(w, k)
   let mut count = 0
-  @ecs.QueryPlan::each(plan, fn(e : @ecs.Entity) -> Unit raise ECSError {
-    count = count + 1
-  })
+  @ecs.QueryPlan::each(plan, fn(e : @ecs.Entity) -> Unit { count = count + 1 })
   inspect(count, content="2")
 }
 
@@ -554,7 +552,7 @@ test "query with no matching entities runs body zero times" {
   let k : @ecs.ComponentKey[Int] = @ecs.World::register(w)
   let plan = @ecs.World::query(w, k)
   let mut ran = false
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { ran = true })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { ran = true })
   inspect(ran, content="false")
 }
 
@@ -566,13 +564,13 @@ test "query plan is reusable after World changes" {
   let e1 = @ecs.World::spawn(w)
   ignore(@ecs.ComponentKey::set(k, e1, 10))
   let mut c1 = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { c1 = c1 + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { c1 = c1 + 1 })
   inspect(c1, content="1")
   // Add another entity and reuse plan
   let e2 = @ecs.World::spawn(w)
   ignore(@ecs.ComponentKey::set(k, e2, 20))
   let mut c2 = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { c2 = c2 + 1 })
   inspect(c2, content="2")
 }
 
@@ -644,9 +642,9 @@ test "add_required returns new immutable plan" {
   let plan2 = @ecs.QueryPlan::add_required(plan1, k2)
   // plan1 and plan2 are different objects (immutability verified by type system)
   let mut c1 = 0
-  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit raise ECSError { c1 = c1 + 1 })
+  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit { c1 = c1 + 1 })
   let mut c2 = 0
-  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit { c2 = c2 + 1 })
   inspect(c1, content="0")
   inspect(c2, content="0")
 }
@@ -666,7 +664,7 @@ test "multi-required query matches entities with all components" {
   let plan = @ecs.World::query(w, k_i)
   let plan = @ecs.QueryPlan::add_required(plan, k_s)
   let mut count = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { count = count + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { count = count + 1 })
   inspect(count, content="1")
 }
 
@@ -679,9 +677,9 @@ test "add_required with same key is idempotent" {
   let plan1 = @ecs.World::query(w, k)
   let plan2 = @ecs.QueryPlan::add_required(plan1, k)
   let mut c1 = 0
-  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit raise ECSError { c1 = c1 + 1 })
+  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit { c1 = c1 + 1 })
   let mut c2 = 0
-  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit { c2 = c2 + 1 })
   inspect(c1, content="1")
   inspect(c2, content="1")
 }
@@ -717,7 +715,7 @@ test "smallest pool chosen as driver" {
   let plan = @ecs.World::query(w, k_a)
   let plan = @ecs.QueryPlan::add_required(plan, k_b)
   let mut count = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { count = count + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { count = count + 1 })
   // Only e_small has both components
   inspect(count, content="1")
 }
@@ -732,9 +730,9 @@ test "add_excluded returns new immutable plan" {
   let plan1 = @ecs.World::query(w, k1)
   let plan2 = @ecs.QueryPlan::add_excluded(plan1, k2)
   let mut c1 = 0
-  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit raise ECSError { c1 = c1 + 1 })
+  @ecs.QueryPlan::each(plan1, fn(_e) -> Unit { c1 = c1 + 1 })
   let mut c2 = 0
-  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit { c2 = c2 + 1 })
   inspect(c1, content="0")
   inspect(c2, content="0")
 }
@@ -755,7 +753,7 @@ test "excluded slot filters out matching entities" {
   let plan = @ecs.World::query(w, k_i)
   let plan = @ecs.QueryPlan::add_excluded(plan, k_s)
   let mut count = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { count = count + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { count = count + 1 })
   inspect(count, content="2")
 }
 
@@ -771,9 +769,9 @@ test "exclude same key twice is idempotent" {
   let plan2 = @ecs.QueryPlan::add_excluded(plan1, k_s)
   let plan3 = @ecs.QueryPlan::add_excluded(plan2, k_s)
   let mut c2 = 0
-  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit raise ECSError { c2 = c2 + 1 })
+  @ecs.QueryPlan::each(plan2, fn(_e) -> Unit { c2 = c2 + 1 })
   let mut c3 = 0
-  @ecs.QueryPlan::each(plan3, fn(_e) -> Unit raise ECSError { c3 = c3 + 1 })
+  @ecs.QueryPlan::each(plan3, fn(_e) -> Unit { c3 = c3 + 1 })
   inspect(c2, content="0")
   inspect(c3, content="0")
 }
@@ -842,7 +840,7 @@ test "multiple required and excluded slots combine correctly" {
   let plan = @ecs.QueryPlan::add_excluded(plan, k_s)
   let plan = @ecs.QueryPlan::add_excluded(plan, k_d)
   let mut count = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { count = count + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { count = count + 1 })
   // only e3 remains
   inspect(count, content="1")
 }
@@ -858,11 +856,9 @@ test "nested read-only query is allowed" {
   let plan = @ecs.World::query(w, k)
   let mut outer = 0
   let mut inner = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError {
+  @ecs.QueryPlan::each(plan, _e => {
     outer = outer + 1
-    @ecs.QueryPlan::each(plan, fn(_e2) -> Unit raise ECSError {
-      inner = inner + 1
-    })
+    @ecs.QueryPlan::each(plan, _e2 => inner = inner + 1)
   })
   inspect(outer, content="1")
   inspect(inner, content="1")

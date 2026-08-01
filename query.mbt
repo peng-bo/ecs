@@ -139,8 +139,8 @@ fn[T] QueryPlan::with_key_appended(
 /// Raises `StructuralMutationDuringQuery` if the callback attempts mutation.
 pub fn QueryPlan::each(
   self : QueryPlan,
-  body : (Entity) -> Unit raise ECSError,
-) -> Unit raise ECSError {
+  body : (Entity) -> Unit raise?,
+) -> Unit raise? {
   self.world.query_depth = self.world.query_depth + 1
   // Select the smallest required pool as the driver
   let mut driver_idx = 0

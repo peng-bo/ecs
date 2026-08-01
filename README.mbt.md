@@ -67,7 +67,7 @@ test "query with required and excluded slots" {
   let plan = @ecs.World::query(w, health)
   let plan = @ecs.QueryPlan::add_excluded(plan, dead)
   let mut count = 0
-  @ecs.QueryPlan::each(plan, fn(_e) -> Unit raise ECSError { count = count + 1 })
+  @ecs.QueryPlan::each(plan, fn(_e) -> Unit { count = count + 1 })
   inspect(count, content="1")
 }
 
