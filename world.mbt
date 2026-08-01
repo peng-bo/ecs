@@ -1,3 +1,16 @@
+// --- Erased pool (private, type-erased lifecycle operations) ---
+
+///|
+/// A type-erased view over one ComponentKey, limited to lifecycle and
+/// membership operations. Lives in the World lifecycle domain because it
+/// is World storage: despawn and clear drive it, and register builds it.
+struct ErasedPool {
+  remove_entity : (Entity) -> Unit
+  clear_all : () -> Unit raise ECSError
+  contains_entity : (Entity) -> Bool
+  dense : () -> Array[Entity]
+}
+
 // --- World ---
 
 ///|
@@ -217,13 +230,7 @@ pub fn[T] World::register(self : World) -> ComponentKey[T] raise ECSError {
   }
   self.next_slot_index = next
   let id = ComponentID::{ world_id: self.world_id, slot_index: slot }
-  let key = ComponentKey::{
-    id,
-    world: self,
-    sparse: [],
-    dense_entities: [],
-    dense_payloads: [],
-  }
+  let key = ComponentKey::new(id, self)
   // Register an erased pool so despawn/clear can clean this slot
   let pool = ErasedPool::{
     remove_entity: fn(e : Entity) -> Unit {
